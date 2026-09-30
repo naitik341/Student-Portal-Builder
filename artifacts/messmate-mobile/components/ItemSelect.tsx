@@ -15,6 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Text as SvgText } from 'react-native-svg';
 
 export type MenuItem = {
   id: number;
@@ -81,13 +82,6 @@ function nameEmoji(name: string) {
   return '🍽️';
 }
 
-function fontSizeForName(name: string, width: number) {
-  const available = width - 17;
-  // Archivo Black is wide; fit by measured character mix without a visible relayout.
-  const units = [...name.toUpperCase()].reduce((sum, c) => sum + (c === ' ' ? 0.34 : 'MW'.includes(c) ? 0.86 : 'ILT'.includes(c) ? 0.47 : 0.68), 0);
-  return Math.max(13, Math.min(25, available / Math.max(units, 1)));
-}
-
 /** The same preview card can be used by the student picker and the manager menu. */
 export function ItemCard({ item, selected, onPress, editable = false, reduceMotion = false }: ItemCardProps) {
   const [width, setWidth] = useState(160);
@@ -133,6 +127,7 @@ export function ItemCard({ item, selected, onPress, editable = false, reduceMoti
         styles.cardShell,
         selected && styles.cardSelected,
         {
+          height: Math.min(170, Math.max(145, width * 1.02)),
           transform: [
             { scale: press },
             { rotate: wiggle.interpolate({ inputRange: [-1, 0, 1], outputRange: ['-1.5deg', '0deg', '1.5deg'] }) },
@@ -164,23 +159,27 @@ export function ItemCard({ item, selected, onPress, editable = false, reduceMoti
               <Image source={{ uri: item.imageData }} resizeMode="contain" style={styles.foodImage} accessibilityLabel={`Photo of ${item.name}`} />
             </Animated.View>
           ) : (
-            <Animated.Text style={[styles.foodEmoji, { transform: [{ scale: chosen.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) }, { rotate: chosen.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '3deg'] }) }] }]}>{emoji}</Animated.Text>
+            <Animated.Text style={[styles.foodEmoji, { fontSize: Math.min(70, width * 0.42), transform: [{ scale: chosen.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) }, { rotate: chosen.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '3deg'] }) }] }]}>{emoji}</Animated.Text>
           )}
         </View>
-        <View
-          style={[styles.vegMark, { borderColor: item.isVeg ? C.veg : C.nonVeg }]}
-          accessibilityLabel={item.isVeg ? 'Vegetarian' : 'Non-vegetarian'}
-        >
-          <View style={[styles.vegDot, { backgroundColor: item.isVeg ? C.veg : C.nonVeg }]} />
+        <View style={styles.markRow}>
+          <View
+            style={[styles.vegMark, { borderColor: item.isVeg ? C.veg : C.nonVeg }]}
+            accessibilityLabel={item.isVeg ? 'Vegetarian' : 'Non-vegetarian'}
+          >
+            <View style={[styles.vegDot, { backgroundColor: item.isVeg ? C.veg : C.nonVeg }]} />
+          </View>
         </View>
-        <Text
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.7}
-          style={[styles.itemName, { fontSize: fontSizeForName(item.name, width) }]}
-        >
-          {item.name.toUpperCase()}
-        </Text>
+        <View style={styles.nameRow}>
+          <Text
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.6}
+            style={styles.itemName}
+          >
+            {item.name.toUpperCase()}
+          </Text>
+        </View>
         {editable ? (
           <View style={styles.editBadge} pointerEvents="none">
             <Ionicons name="pencil" size={16} color={C.pureWhite} />
@@ -212,18 +211,17 @@ function StaggeredCard({ item, selected, index, onPress, reduceMotion }: { item:
   );
 }
 
-function OutlineWord({ text, size }: { text: string; size: number }) {
-  const offsets = useMemo(() => {
-    const points: { x: number; y: number }[] = [];
-    for (let i = 0; i < 16; i++) points.push({ x: Math.cos((i * Math.PI) / 8) * 3, y: Math.sin((i * Math.PI) / 8) * 3 });
-    return points;
-  }, []);
+function OutlineWord({ text, size, width }: { text: string; size: number; width: number }) {
+  const x = width / 2;
+  const y = size * 1.02;
+  const fontSize = size * Math.min(1, 6 / Math.max(text.length, 6));
+  const common = { x, y, fontSize, fontFamily: DISPLAY, textAnchor: 'middle' as const };
   return (
-    <View style={[styles.orderFrame, { height: size * 1.18 }]} accessibilityLabel={text}>
-      {offsets.map((offset, index) => (
-        <Text key={index} accessible={false} aria-hidden style={[styles.orderText, { fontSize: size, lineHeight: size * 1.18, color: C.ink, left: offset.x, top: offset.y }]} numberOfLines={1}>{text}</Text>
-      ))}
-      <Text accessible={false} aria-hidden style={[styles.orderText, { fontSize: size, lineHeight: size * 1.18, color: C.orange }]} numberOfLines={1}>{text}</Text>
+    <View style={styles.orderFrame} accessible accessibilityLabel={text}>
+      <Svg width={width} height={size * 1.25} viewBox={`0 0 ${width} ${size * 1.25}`} accessibilityElementsHidden>
+        <SvgText {...common} fill={C.ink} stroke={C.ink} strokeWidth={7} strokeLinejoin="round">{text}</SvgText>
+        <SvgText {...common} fill={C.orange}>{text}</SvgText>
+      </Svg>
     </View>
   );
 }
@@ -312,7 +310,7 @@ export default function ItemSelect({
 
   const safeTop = Platform.OS === 'web' ? 29 : insets.top + 18;
   const safeBottom = Platform.OS === 'web' ? 22 : Math.max(insets.bottom, 10) + 9;
-  const titleSize = Math.min(34, width * 0.091);
+  const titleSize = Math.min(36, width * 0.096);
   const orderSize = Math.min(65, width * 0.173);
 
   return (
@@ -355,7 +353,7 @@ export default function ItemSelect({
               {headingLine1.toUpperCase()}
             </Animated.Text>
             <Animated.View style={{ opacity: orderEnter, transform: [{ translateY: orderEnter.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }, { scale: orderEnter.interpolate({ inputRange: [0, 1], outputRange: [0.78, 1] }) }, { rotate: orderEnter.interpolate({ inputRange: [0, 1], outputRange: ['-4deg', '0deg'] }) }] }}>
-              <OutlineWord text={headingLine2.toUpperCase()} size={orderSize} />
+               <OutlineWord text={headingLine2.toUpperCase()} size={orderSize} width={width - 26} />
             </Animated.View>
           </View>
 
@@ -434,27 +432,28 @@ const styles = StyleSheet.create({
   backButton: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center' },
   backButtonPressed: { transform: [{ scale: 0.93 }] },
   muteButton: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
-  heading: { marginTop: 30, marginBottom: 25 },
-  headingLine: { fontFamily: BOLD, fontWeight: '900', color: C.ink, letterSpacing: -1.15, includeFontPadding: false },
-  orderFrame: { width: '100%', overflow: 'visible', justifyContent: 'center' },
-  orderText: { position: 'absolute', left: 0, top: 0, width: '100%', fontFamily: DISPLAY, fontWeight: '900', letterSpacing: -1.7, includeFontPadding: false },
+   heading: { marginTop: 30, marginBottom: 10 },
+   headingLine: { fontFamily: BOLD, fontWeight: 'normal', color: C.ink, letterSpacing: -1.15, includeFontPadding: false },
+   orderFrame: { width: '100%', overflow: 'visible', justifyContent: 'center' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 17, rowGap: 14 },
   gridCell: { width: '47.55%', marginBottom: 3 },
-  cardShell: { width: '100%', height: 168, overflow: 'visible', borderRadius: 18 },
+   cardShell: { width: '100%', height: 170, overflow: 'visible', borderRadius: 18 },
   cardSelected: { backgroundColor: C.orange, padding: 2 },
-  card: { flex: 1, overflow: 'visible', backgroundColor: C.white, borderWidth: 3, borderColor: C.ink, borderRadius: 18 },
+   card: { flex: 1, overflow: 'visible', backgroundColor: C.white, borderWidth: 3, borderColor: C.ink, borderRadius: 18, flexDirection: 'column' },
   cardPressed: { backgroundColor: '#FFF5ED' },
-  foodStage: { position: 'absolute', top: 13, left: 7, right: 7, height: 88, alignItems: 'center', justifyContent: 'center' },
-  orangeSlab: { position: 'absolute', width: '97%', height: 69, backgroundColor: C.orange, top: 11 },
-  foodPicture: { width: '100%', height: 101, alignItems: 'center', justifyContent: 'center' },
+   foodStage: { height: '55%', width: '100%', alignItems: 'center', justifyContent: 'center' },
+   orangeSlab: { position: 'absolute', width: '85%', height: '70%', backgroundColor: C.orange },
+   foodPicture: { width: '94%', height: '105%', alignItems: 'center', justifyContent: 'center' },
   foodImage: { width: '100%', height: '100%' },
-  foodEmoji: { fontSize: 70, lineHeight: 92, textAlign: 'center', includeFontPadding: false },
-  vegMark: { width: 18, height: 18, borderWidth: 2.5, position: 'absolute', right: 9, top: 98, alignItems: 'center', justifyContent: 'center' },
+   foodEmoji: { textAlign: 'center', includeFontPadding: false },
+   markRow: { height: 21, width: '100%', paddingRight: 10, alignItems: 'flex-end', justifyContent: 'center' },
+   vegMark: { width: 18, height: 18, borderWidth: 3, alignItems: 'center', justifyContent: 'center' },
   vegDot: { width: 8, height: 8, borderRadius: 4 },
-  itemName: { position: 'absolute', bottom: 35, left: 4, right: 9, textAlign: 'right', color: C.ink, fontFamily: BOLD, fontWeight: '900', letterSpacing: -0.8, includeFontPadding: false },
-  selectPill: { position: 'absolute', right: -8, bottom: -6, minWidth: 76, height: 34, paddingHorizontal: 11, borderRadius: 18, backgroundColor: C.orange, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+   nameRow: { width: '100%', paddingRight: 10, paddingLeft: 4, height: 32, justifyContent: 'center', alignItems: 'flex-end' },
+   itemName: { maxWidth: '100%', textAlign: 'right', color: C.ink, fontFamily: BOLD, fontWeight: 'normal', fontSize: 24, letterSpacing: -0.8, includeFontPadding: false },
+   selectPill: { position: 'absolute', right: -8, bottom: -3, minWidth: 76, height: 34, paddingHorizontal: 11, borderRadius: 18, backgroundColor: C.orange, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   selectedPill: { backgroundColor: C.ink },
-  selectText: { color: C.pureWhite, fontFamily: BOLD, fontWeight: '900', fontSize: 16, includeFontPadding: false },
+   selectText: { color: C.pureWhite, fontFamily: BOLD, fontWeight: 'normal', fontSize: 17, includeFontPadding: false },
   selectedText: { fontSize: 12 },
   checkIcon: { marginRight: 2 },
   editBadge: { position: 'absolute', right: -8, bottom: -6, width: 36, height: 36, borderRadius: 18, backgroundColor: C.orange, alignItems: 'center', justifyContent: 'center' },
@@ -462,7 +461,7 @@ const styles = StyleSheet.create({
   proceedButton: { minHeight: 61, borderRadius: 19, backgroundColor: C.orange, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
   proceedPressed: { backgroundColor: C.orangePressed },
   proceedDisabled: { opacity: 0.48 },
-  proceedText: { color: C.pureWhite, fontFamily: BOLD, fontWeight: '900', letterSpacing: -1, includeFontPadding: false },
+   proceedText: { color: C.pureWhite, fontFamily: BOLD, fontWeight: 'normal', letterSpacing: -1, includeFontPadding: false },
   toast: { alignSelf: 'center', backgroundColor: C.ink, borderRadius: 20, paddingHorizontal: 18, paddingVertical: 10, marginBottom: 11 },
   toastText: { color: C.pureWhite, fontFamily: BOLD, fontSize: 13 },
   skeletonCard: { height: 168, borderRadius: 18, borderWidth: 3, borderColor: C.subtle, backgroundColor: C.white, padding: 12 },

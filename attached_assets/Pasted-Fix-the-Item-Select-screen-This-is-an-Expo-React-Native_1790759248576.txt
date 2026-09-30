@@ -1,0 +1,28 @@
+Fix the Item Select screen. This is an Expo / React Native app running in Expo Go, so use RN-compatible solutions only (no CSS, no -webkit-text-stroke). Compare against the attached reference screenshot.
+
+1) FONTS (main bug: nothing is loading)
+- Install @expo-google-fonts/archivo-black and @expo-google-fonts/modak, plus expo-font.
+- Load them with useFonts in the root layout and keep the splash screen visible until they are loaded (expo-splash-screen preventAutoHideAsync / hideAsync).
+- Apply fontFamily "ArchivoBlack_400Regular" to ALL text on this screen: "WHAT DID YOU", item names, SELECT, PROCEED. Set fontWeight to normal (do not use bold on top of it).
+- "ORDER?" uses "Modak_400Regular".
+
+2) ORDER? OUTLINE
+- Use react-native-svg. Render "ORDER?" as an SVG <Text> with fill #F06A14, stroke #000, strokeWidth ~7, strokeLinejoin="round", and draw the stroke BEHIND the fill (render the text twice: stroke copy first, fill copy on top) so the outline is smooth and outside the letters, not eating into them.
+- Size it to span ~88% of screen width, sitting directly under "WHAT DID YOU" (which is Archivo Black, ~36px, black, uppercase).
+
+3) CARD LAYOUT (fixed structure, no overlapping)
+Each card is a column with fixed sections, not absolute positioning:
+- Card: white #FCFCFC, 3px black border, radius 18, fixed height ~170 (scale with screen width), overflow visible.
+- Section A (image area, height ~ 55% of card): orange rectangle (#F06A14), about 85% of card width and ~70% of the section height, rotated -12deg, centered. The food image sits centered on top and can overflow the rectangle slightly at the top. Rectangle must NOT extend into the name area.
+- Section B (row, right-aligned, paddingRight 10): the veg/non-veg square mark (18px, 3px border, centered dot, green #118A1A / red #D9151B).
+- Section C (below the mark, right-aligned, paddingRight 10): item name, single line, adjustsFontSizeToFit with numberOfLines={1}, max fontSize 24, minimumFontScale 0.6. The name must sit BELOW the veg mark and never overlap it.
+- SELECT pill: absolute, right -8, bottom -3, orange #F06A14, 76x34, fully rounded, white ArchivoBlack text ~17px, overlapping the card's bottom-right corner and poking outside the border like the reference. Make sure the card's parent doesn't clip it (no overflow hidden on the card or the grid row).
+
+4) GRID + PROCEED
+- 2 columns, 13px side margin, 17px column gap, 14px row gap, starting right below the heading.
+- PROCEED stays pinned at the bottom (above the safe area), full width minus 13px margins, 61px tall, orange, white ArchivoBlack ~34px.
+
+5) KEEP
+Keep the press animations, selection states and the Menu Manager as they are. Only fix fonts, outline and card layout.
+
+After the fix, tell me which fonts loaded successfully and confirm "ORDER?" uses the SVG stroke approach.
