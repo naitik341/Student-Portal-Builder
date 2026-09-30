@@ -304,6 +304,34 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /feedback/manage/dates:
+    get:
+      operationId: listFeedbackDates
+      tags: [feedback]
+      summary: List meal dates with delivered feedback counts (manager only)
+      security:
+        - ClerkBearer: []
+      parameters:
+        - name: meal
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/Meal"
+      responses:
+        "200":
+          description: Dates with feedback for the selected meal, newest first; no student or device identifiers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FeedbackDateCount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /summary:
     get:
       operationId: getFeedbackSummary
@@ -527,6 +555,16 @@ components:
           type: string
           format: date-time
       required: [items, rating, tags, comment, createdAt]
+    FeedbackDateCount:
+      type: object
+      properties:
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        count:
+          type: integer
+          minimum: 1
+      required: [date, count]
     FeedbackTagCount:
       type: object
       properties:

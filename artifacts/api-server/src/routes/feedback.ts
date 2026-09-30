@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, feedback } from "@workspace/db";
-import { and, desc, eq } from "drizzle-orm";
-import { ListDeliveredFeedbackResponse, SubmitFeedbackBody, SubmitFeedbackResponse } from "@workspace/api-zod";
+import { and, count, desc, eq, isNotNull } from "drizzle-orm";
+import { ListDeliveredFeedbackResponse, ListFeedbackDatesResponse, SubmitFeedbackBody, SubmitFeedbackResponse } from "@workspace/api-zod";
 import type { RequestHandler } from "express";
 import { requireManager } from "../middlewares/managerAuth";
 
@@ -44,6 +44,27 @@ const rateLimitFeedback: RequestHandler = (req, res, next) => {
   }
   next();
 };
+
+router.get("/feedback/manage/dates", requireManager, async (req, res, next): Promise<void> => {
+  const { meal } = req.query;
+  if (meal !== "Breakfast" && meal !== "Lunch" && meal !== "Dinner") {
+    res.status(400).json({ error: "Invalid meal" });
+    return;
+  }
+
+  try {
+    const rows = await db.select({
+      date: feedback.mealDate,
+      count: count(),
+    }).from(feedback)
+      .where(and(eq(feedback.meal, meal), isNotNull(feedback.mealDate)))
+      .groupBy(feedback.mealDate)
+      .orderBy(desc(feedback.mealDate));
+    res.json(ListFeedbackDatesResponse.parse(rows));
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get("/feedback/manage", requireManager, async (req, res, next) => {
   const { date, meal } = req.query;

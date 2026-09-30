@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Link } from 'expo-router';
 import { useAuth } from '@clerk/expo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getListDeliveredFeedbackQueryKey, useListDeliveredFeedback } from '@workspace/api-client-react';
+import { getListDeliveredFeedbackQueryKey, getListFeedbackDatesQueryKey, useListDeliveredFeedback, useListFeedbackDates } from '@workspace/api-client-react';
 import { useColors } from '@/hooks/useColors';
 
 const MEALS = ['Breakfast', 'Lunch', 'Dinner'] as const;
@@ -33,11 +33,20 @@ export default function ManagerFeedback() {
   const { userId } = useAuth();
   const [date, setDate] = useState(() => localDate(new Date()));
   const [meal, setMeal] = useState<Meal>('Breakfast');
+  const [showDates, setShowDates] = useState(false);
   const params = { date, meal };
   const query = useListDeliveredFeedback(params, {
     query: {
       enabled: !!userId,
       queryKey: [...getListDeliveredFeedbackQueryKey(params), userId],
+      staleTime: 0,
+      refetchOnMount: 'always',
+    },
+  });
+  const datesQuery = useListFeedbackDates({ meal }, {
+    query: {
+      enabled: !!userId,
+      queryKey: [...getListFeedbackDatesQueryKey({ meal }), userId],
       staleTime: 0,
       refetchOnMount: 'always',
     },
@@ -90,6 +99,53 @@ export default function ManagerFeedback() {
             </Pressable>
           ))}
         </View>
+
+        <Pressable
+          testID="feedback-date-picker"
+          accessibilityRole="button"
+          accessibilityState={{ expanded: showDates }}
+          onPress={() => {
+            if (!showDates) void datesQuery.refetch();
+            setShowDates(current => !current);
+          }}
+          style={[styles.jumpButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+        >
+          <Ionicons name="calendar-outline" size={19} color={colors.primary} />
+          <Text style={[styles.jumpText, { color: colors.foreground }]}>JUMP TO A DATE WITH {meal.toUpperCase()} FEEDBACK</Text>
+          <Ionicons name={showDates ? 'chevron-up' : 'chevron-down'} size={19} color={colors.foreground} />
+        </Pressable>
+        {showDates && (
+          <View style={[styles.dateChoices, { backgroundColor: colors.card, borderColor: colors.border }]} testID="feedback-available-dates">
+            {datesQuery.isPending ? (
+              <View style={styles.dateMessage}><ActivityIndicator color={colors.primary} /><Text style={{ color: colors.mutedForeground }}>Loading dates…</Text></View>
+            ) : datesQuery.isError ? (
+              <View style={styles.dateMessage}>
+                <Text accessibilityRole="alert" style={{ color: colors.destructive }}>
+                  {statusOf(datesQuery.error) === 403 ? 'Not authorized to view feedback dates.' : statusOf(datesQuery.error) === 401 ? 'Sign in again to view feedback dates.' : 'Could not load feedback dates.'}
+                </Text>
+                <Pressable accessibilityRole="button" onPress={() => void datesQuery.refetch()}><Text style={{ color: colors.primary }}>RETRY</Text></Pressable>
+              </View>
+            ) : !datesQuery.data?.length ? (
+              <Text style={[styles.dateMessage, { color: colors.mutedForeground }]}>No delivered {meal.toLowerCase()} feedback yet.</Text>
+            ) : (
+              <ScrollView nestedScrollEnabled style={styles.dateList}>
+                {datesQuery.data.map(entry => (
+                  <Pressable
+                    key={entry.date}
+                    testID={`feedback-jump-${entry.date}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${new Date(`${entry.date}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}, ${entry.count} ${entry.count === 1 ? 'response' : 'responses'}`}
+                    onPress={() => { setDate(entry.date); setShowDates(false); }}
+                    style={[styles.dateChoice, { borderBottomColor: colors.border, backgroundColor: date === entry.date ? colors.secondary : colors.card }]}
+                  >
+                    <Text style={[styles.choiceDate, { color: colors.foreground }]}>{new Date(`${entry.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</Text>
+                    <Text style={[styles.choiceCount, { color: colors.mutedForeground }]}>{entry.count} {entry.count === 1 ? 'response' : 'responses'}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        )}
 
         {query.isPending || query.isFetching && !query.data ? (
           <View style={styles.state}><ActivityIndicator color={colors.primary} /><Text style={[styles.stateText, { color: colors.mutedForeground }]}>Loading delivered feedback…</Text></View>
@@ -155,6 +211,14 @@ const styles = StyleSheet.create({
   meals: { flexDirection: 'row', gap: 6, marginTop: 6 },
   mealButton: { flex: 1, borderWidth: 1.5, borderRadius: 12, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   mealText: { fontFamily: BOLD, fontSize: 10 },
+  jumpButton: { flexDirection: 'row', alignItems: 'center', gap: 9, minHeight: 48, borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 13 },
+  jumpText: { flex: 1, fontFamily: BOLD, fontSize: 10, lineHeight: 15 },
+  dateChoices: { borderWidth: 1.5, borderRadius: 12, overflow: 'hidden' },
+  dateMessage: { padding: 18, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10 },
+  dateList: { maxHeight: 240 },
+  dateChoice: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, minHeight: 48, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1 },
+  choiceDate: { fontSize: 14, fontWeight: '600' },
+  choiceCount: { fontSize: 12 },
   state: { minHeight: 210, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 20 },
   stateText: { fontSize: 14, lineHeight: 21, textAlign: 'center' },
   retry: { minHeight: 42, paddingHorizontal: 25, borderRadius: 12, justifyContent: 'center' },

@@ -23,6 +23,7 @@ import type {
   BadRequestResponse,
   DeliveredFeedback,
   Error,
+  FeedbackDateCount,
   FeedbackReceipt,
   FeedbackSubmission,
   FeedbackSummary,
@@ -31,6 +32,7 @@ import type {
   GetMenuParams,
   HealthStatus,
   ListDeliveredFeedbackParams,
+  ListFeedbackDatesParams,
   MenuItem,
   MenuItemCreatePayload,
   MenuItemUpdatePayload,
@@ -978,6 +980,90 @@ export function useListDeliveredFeedback<TData = Awaited<ReturnType<typeof listD
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListDeliveredFeedbackQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListFeedbackDatesUrl = (params: ListFeedbackDatesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/feedback/manage/dates?${stringifiedParams}` : `/api/feedback/manage/dates`
+}
+
+/**
+ * @summary List meal dates with delivered feedback counts (manager only)
+ */
+export const listFeedbackDates = async (params: ListFeedbackDatesParams, options?: Parameters<typeof customFetch>[1]): Promise<FeedbackDateCount[]> => {
+
+  return customFetch<FeedbackDateCount[]>(getListFeedbackDatesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListFeedbackDatesQueryKey = (params?: ListFeedbackDatesParams,) => {
+    return [
+    `/api/feedback/manage/dates`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListFeedbackDatesQueryOptions = <TData = Awaited<ReturnType<typeof listFeedbackDates>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>>(params: ListFeedbackDatesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listFeedbackDates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListFeedbackDatesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listFeedbackDates>>> = ({ signal }) => listFeedbackDates(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listFeedbackDates>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListFeedbackDatesQueryResult = NonNullable<Awaited<ReturnType<typeof listFeedbackDates>>>
+export type ListFeedbackDatesQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>
+
+
+/**
+ * @summary List meal dates with delivered feedback counts (manager only)
+ */
+
+export function useListFeedbackDates<TData = Awaited<ReturnType<typeof listFeedbackDates>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>>(
+ params: ListFeedbackDatesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listFeedbackDates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListFeedbackDatesQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

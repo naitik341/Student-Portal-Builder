@@ -255,6 +255,24 @@ export const ListDeliveredFeedbackResponse = zod.array(ListDeliveredFeedbackResp
 
 
 /**
+ * @summary List meal dates with delivered feedback counts (manager only)
+ */
+export const ListFeedbackDatesQueryParams = zod.object({
+  "meal": zod.enum(['Breakfast', 'Lunch', 'Dinner'])
+})
+
+export const listFeedbackDatesResponseDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+
+export const ListFeedbackDatesResponseItem = zod.object({
+  "date": zod.string().regex(listFeedbackDatesResponseDateRegExp),
+  "count": zod.number().int().min(1)
+})
+export const ListFeedbackDatesResponse = zod.array(ListFeedbackDatesResponseItem)
+
+
+/**
  * @summary Generate an AI summary of feedback grouped by item (manager only)
  */
 export const GetFeedbackSummaryResponse = zod.object({

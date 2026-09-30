@@ -115,6 +115,13 @@ export interface DeliveredFeedback {
   createdAt: string;
 }
 
+export interface FeedbackDateCount {
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  date: string;
+  /** @minimum 1 */
+  count: number;
+}
+
 export interface FeedbackTagCount {
   item: string;
   tag: string;
@@ -165,6 +172,10 @@ meal?: Meal;
 
 export type ListDeliveredFeedbackParams = {
 date: string;
+meal: Meal;
+};
+
+export type ListFeedbackDatesParams = {
 meal: Meal;
 };
 

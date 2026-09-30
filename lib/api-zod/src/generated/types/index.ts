@@ -9,6 +9,7 @@
 export * from './badRequestResponse';
 export * from './deliveredFeedback';
 export * from './error';
+export * from './feedbackDateCount';
 export * from './feedbackReceipt';
 export * from './feedbackSubmission';
 export * from './feedbackSummary';
@@ -18,6 +19,7 @@ export * from './getManagedMenuParams';
 export * from './getMenuParams';
 export * from './healthStatus';
 export * from './listDeliveredFeedbackParams';
+export * from './listFeedbackDatesParams';
 export * from './meal';
 export * from './menuItem';
 export * from './menuItemCreatePayload';
