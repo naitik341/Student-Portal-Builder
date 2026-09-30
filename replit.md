@@ -1,15 +1,17 @@
-# [Project name]
+# MessMate
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A student-facing mobile app for rating hostel mess meals in a few taps.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- Managed workflow `artifacts/api-server: API Server` — API scaffold (currently unused by the student flow)
+- Managed workflow `artifacts/messmate-mobile: expo` — mobile preview
+- `pnpm --filter @workspace/messmate-mobile run typecheck` — check the student app
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- The student flow has no required backend or database configuration yet.
 
 ## Stack
 
@@ -22,15 +24,19 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- Student flow: `artifacts/messmate-mobile/app/(tabs)/index.tsx`
+- Mobile theme: `artifacts/messmate-mobile/constants/colors.ts`
+- Mobile icon: `artifacts/messmate-mobile/assets/images/icon.png`
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- The first release is intentionally student-only. Manager sign-in is informational; there is no manager app yet.
+- Submissions and same-day meal limits are kept on the device with AsyncStorage. Offline submissions are also kept in a separate queue for future delivery; no server sync exists yet.
+- The supplied rating brief referenced CSS that was not attached, so the native app uses animated SVG face controls instead.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Students choose a meal, tap a face rating, optionally select quick tags or add a short comment, and save anonymous feedback. Positive ratings get a celebratory thank-you screen.
 
 ## User preferences
 

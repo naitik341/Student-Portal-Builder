@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
   Keyboard,
   Platform,
   Pressable,
@@ -429,7 +430,7 @@ function makeStyles(colors: Palette) {
       elevation: 3,
     },
     submitButtonPressed: {
-      transform: [{ scale: 0.97 }],
+      transform: [{ scale: 0.96 }],
     },
     submitText: {
       color: colors.primaryForeground,
@@ -589,6 +590,7 @@ function FaceOption({
   selected,
   tone,
   ink,
+  reduceMotion,
   styles,
   onPress,
 }: {
@@ -596,12 +598,18 @@ function FaceOption({
   selected: boolean;
   tone: string;
   ink: string;
+  reduceMotion: boolean;
   styles: AppStyles;
   onPress: () => void;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
   const labelOpacity = useRef(new Animated.Value(selected ? 1 : 0)).current;
   useEffect(() => {
+    if (reduceMotion) {
+      scale.setValue(1);
+      labelOpacity.setValue(selected ? 1 : 0);
+      return;
+    }
     Animated.parallel([
       Animated.spring(scale, {
         toValue: selected ? 1.09 : 1,
@@ -615,7 +623,7 @@ function FaceOption({
         useNativeDriver: true,
       }),
     ]).start();
-  }, [labelOpacity, scale, selected]);
+  }, [labelOpacity, reduceMotion, scale, selected]);
 
   return (
     <Pressable
@@ -643,11 +651,13 @@ function FaceRating({
   value,
   colors,
   styles,
+  reduceMotion,
   onChange,
 }: {
   value: number | null;
   colors: Palette;
   styles: AppStyles;
+  reduceMotion: boolean;
   onChange: (rating: number) => void;
 }) {
   const tones = faceTones(colors);
@@ -663,6 +673,7 @@ function FaceRating({
           rating={rating}
           tone={tones[rating - 1]}
           ink={colors.foreground}
+          reduceMotion={reduceMotion}
           selected={value === rating}
           styles={styles}
           onPress={() => onChange(rating)}
@@ -820,7 +831,7 @@ function TagChip({
     vibrate();
     if (!reduceMotion) {
       Animated.sequence([
-        Animated.timing(scale, { toValue: 1.06, duration: 80, useNativeDriver: true }),
+        Animated.timing(scale, { toValue: 1.1, duration: 80, useNativeDriver: true }),
         Animated.spring(scale, { toValue: 1, speed: 22, bounciness: 8, useNativeDriver: true }),
       ]).start();
     }
@@ -933,7 +944,7 @@ export default function MessMateScreen() {
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
-  const suggested = useMemo(suggestedMeal, []);
+  const [suggested, setSuggested] = useState<Meal>(suggestedMeal);
   const [screen, setScreen] = useState<Screen>('meal');
   const [meal, setMeal] = useState<Meal | null>(null);
   const [alreadyMeal, setAlreadyMeal] = useState<Meal | null>(null);
@@ -958,8 +969,6 @@ export default function MessMateScreen() {
   const countValue = useRef(new Animated.Value(0)).current;
   const checkDraw = useRef(new Animated.Value(48)).current;
   const selectionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const todayKey = localDateKey(new Date());
-
   const readLocalData = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
@@ -982,6 +991,18 @@ export default function MessMateScreen() {
   useEffect(() => {
     void readLocalData();
   }, [readLocalData]);
+
+  useEffect(() => {
+    const refreshSuggestion = () => setSuggested(suggestedMeal());
+    const interval = setInterval(refreshSuggestion, 60_000);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshSuggestion();
+    });
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -1104,7 +1125,7 @@ export default function MessMateScreen() {
     const existing = submissions.find(
       (submission) =>
         submission.meal === selectedMeal &&
-        localDateKey(new Date(submission.createdAt)) === todayKey,
+        localDateKey(new Date(submission.createdAt)) === localDateKey(new Date()),
     );
     if (selectionTimer.current) clearTimeout(selectionTimer.current);
     selectionTimer.current = setTimeout(() => {
@@ -1147,8 +1168,20 @@ export default function MessMateScreen() {
       createdAt: new Date().toISOString(),
     };
     try {
+      let isOnline = online;
+      try {
+        const networkState = await Network.getNetworkStateAsync();
+        isOnline =
+          networkState.isConnected !== false &&
+          networkState.isInternetReachable !== false;
+        setOnline(isOnline);
+      } catch {
+        // Preserve the latest known network status if a fresh check is unavailable.
+      }
       const duplicate = submissions.some(
-        (item) => item.meal === meal && localDateKey(new Date(item.createdAt)) === todayKey,
+        (item) =>
+          item.meal === meal &&
+          localDateKey(new Date(item.createdAt)) === localDateKey(new Date()),
       );
       if (duplicate) {
         setAlreadyMeal(meal);
@@ -1156,12 +1189,12 @@ export default function MessMateScreen() {
         return;
       }
       const nextSubmissions = [...submissions, submission];
-      const nextQueue = online ? offlineQueue : [...offlineQueue, submission];
+      const nextQueue = isOnline ? offlineQueue : [...offlineQueue, submission];
       const storagePairs: [string, string][] = [[SUBMISSIONS_KEY, JSON.stringify(nextSubmissions)]];
-      if (!online) storagePairs.push([OFFLINE_QUEUE_KEY, JSON.stringify(nextQueue)]);
+      if (!isOnline) storagePairs.push([OFFLINE_QUEUE_KEY, JSON.stringify(nextQueue)]);
       await AsyncStorage.multiSet(storagePairs);
       setSubmissions(nextSubmissions);
-      if (!online) {
+      if (!isOnline) {
         setOfflineQueue(nextQueue);
         setSavedOffline(true);
       } else {
@@ -1207,7 +1240,7 @@ export default function MessMateScreen() {
         { paddingTop: safeTop, paddingBottom: safeBottom },
       ]}
     >
-      <StatusBar style="dark" backgroundColor={colors.background} />
+      <StatusBar style="dark" />
       <View style={styles.frame}>
         <View style={styles.topBar}>
           <View style={styles.brand}>
@@ -1327,6 +1360,7 @@ export default function MessMateScreen() {
                   value={rating}
                   colors={colors}
                   styles={styles}
+                  reduceMotion={reduceMotion}
                   onChange={chooseRating}
                 />
                 <Text style={styles.ratingFootnote}>
