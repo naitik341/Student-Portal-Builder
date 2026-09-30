@@ -26,3 +26,4 @@ MANAGER_EMAILS = "naitikp852@gmail.com"
 
 [nix]
 channel = "stable-25_05"
+packages = ["watchman"]

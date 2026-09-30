@@ -1,0 +1,144 @@
+Build the full MANAGER DASHBOARD for MessMate. This is an Expo / React Native app (Expo Go), so use RN-compatible tools only: react-native-reanimated for animations, react-native-svg for custom graphics, react-native-gifted-charts for charts, expo-haptics, expo-clipboard, expo-sharing, and expo-router (or React Navigation) for navigation. No CSS, no web-only libraries.
+
+BRAND (reuse existing theme, do not invent new styles)
+- Background #F1ECEC, orange #F06A14, black #000, card #FCFCFC, green #118A1A, red #D9151B, amber #F59E0B, indigo #4F46E5, yellow #FACC15.
+- Fonts: ArchivoBlack_400Regular for all headings, numbers and buttons. Modak_400Regular only for big titles with the SVG outline trick already used on ORDER?. Body text can be a light system font.
+- Cards: white, 3px black border, radius 18. Pills fully rounded. Flat look, no soft shadows.
+- Every button: press scales to 0.93 with a spring back, haptic tap (expo-haptics).
+- Skeleton loaders on every data block. Friendly empty states. Toasts for actions.
+
+NAVIGATION
+Bottom tab bar (black pill bar, orange active icon, sliding indicator): Dashboard | Reviews | Menu | Insights | Settings.
+PIN login first (existing). This prompt builds the DASHBOARD tab in full and the INSIGHTS tab. Reviews and Menu tabs reuse what already exists.
+
+=====================================
+DASHBOARD TAB (home, pull to refresh, sections top to bottom)
+=====================================
+
+1) TOP BAR
+- Left: "Hi, Manager 👋" and today's date. Right: bell icon with unread alert count badge, and a mute/sound toggle.
+- Date switcher row: left/right arrows and tappable date that opens a calendar sheet. Quick pills: Today | Yesterday | 7D | 30D.
+- Meal segmented control: All | Breakfast | Lunch | Dinner (black selected pill with sliding animation). Every section below reacts to date and meal.
+
+2) LIVE STATUS STRIP
+- Small pulsing green dot + "LIVE" + "12 reviews in the last hour". Auto-refresh every 10 seconds. New reviews trigger a subtle haptic and the counters tick up.
+
+3) KPI CARDS (horizontal snap carousel, 6 cards, staggered entry)
+- Overall Rating: score /5 with animated ring (red < 3, amber 3 to 4, green > 4), count-up number, trend arrow vs previous period.
+- Total Responses: count, participation rate ("143 of 300 students, 48%") with progress bar.
+- Satisfaction %: share of 4 and 5 ratings.
+- Complaint Rate: share of reviews with at least one negative tag.
+- Response Speed: average time between meal end and review (optional, mock if no data).
+- Resolved Issues: "5 of 8 fixed" from the action checklist.
+Tap a KPI card to open a bottom sheet with a 7-day sparkline and explanation.
+
+4) MESSBOT DIGEST (hero card, orange with black border, robot avatar)
+- Title "MESSBOT SAYS". Auto-generates on load and on filter change, cached per filter combo.
+- Loading: shimmer plus rotating text ("Reading 143 reviews...", "Spotting patterns...").
+- Output with typewriter effect: VERDICT (1 sentence + mood emoji), 🔴 FIX THESE (top 3 with count, item name, action), 🟢 KEEP DOING (1-2), 📈 TREND (1 line). Under 100 words.
+- Buttons: Regenerate, Copy, Share (WhatsApp deep link with text prefilled).
+- "Ask MessBot" chat input with 4 quick chips. Answers under 60 words in chat bubbles with typing dots.
+- Fallback to a rule-based summary if the AI call fails, with a small "Basic summary (AI offline)" label.
+
+5) ACTION CHECKLIST ("FIX TODAY")
+- Each "fix this" item from MessBot becomes a checkbox row: issue, item, count, priority chip (High/Med/Low), assigned to (Cook, Server, Cleaner, Manager) via a small picker.
+- Checking it: strike-through animation, haptic success, small confetti (use a simple Reanimated particle burst), and it persists.
+- Tomorrow's digest labels each old issue as "Recurring" or "Resolved".
+- "+ Add custom task" pill.
+
+6) MEAL PERFORMANCE (3 cards side by side: Breakfast yellow, Lunch orange, Dinner indigo)
+- Emoji, average score, response count, trend arrow, and mini rating-face distribution bar (stacked bar of 1 to 5).
+- Tap to apply the meal filter to the entire dashboard.
+
+7) RATING DISTRIBUTION
+- Five rows with the same small rating faces used on the student side, horizontal animated bars (grow from 0), count and percent.
+- Tap a row to filter the Reviews tab to that rating.
+
+8) TOP COMPLAINTS and TOP PRAISES
+- Two cards (stacked on phone). Horizontal animated bar charts, sorted by count, showing tag, count, percent, and a mini trend arrow vs last week.
+- Tap a bar to open a bottom sheet with the actual comments for that tag and the items it relates to.
+
+9) ITEM LEADERBOARD
+- Ranked list of menu items using the same tilted-orange-rectangle thumbnail style from the student screen (small).
+- Columns: rank, item, average rating, review count, top complaint chip.
+- Toggle: Best | Needs Attention. Top 3 get gold/silver/bronze badges. Tap an item to open an Item Detail sheet (see below).
+
+10) TREND CHART
+- Line chart (gifted-charts), last 7 or 30 days, one line per meal in meal colors, smooth curves, animated draw, touch tooltip showing exact values.
+- Toggle: Rating | Responses | Complaints.
+- Callout chip under it, auto computed: "Salt complaints up 30% vs last week".
+
+11) HEATMAP (Day x Meal)
+- Grid of the last 7 days by 3 meals. Cell color from red to green by average rating, with the number inside. Tap a cell to set the date and meal filters. Great to spot "dinner is always bad on Sundays".
+
+12) TIME OF DAY / QUEUE INSIGHT
+- Bar chart of review counts by hour, plus a chip "Queue complaints peak at 8:15 PM" computed from "Long queue" and "Late service" tags.
+
+13) ALERTS PANEL (also opens from the bell icon)
+- Auto generated cards, dismissible with swipe:
+  - Rating dropped more than 0.5 vs yesterday
+  - A complaint tag crossed 20 mentions in a day
+  - Hygiene tags (Dirty plates, Hair/insect found) appeared, marked red and urgent
+  - A recurring issue for 3+ days
+- Each alert has "View reviews" and "Add to checklist" buttons.
+
+14) LIVE FEED (collapsible)
+- Latest reviews sliding in at the top: small face, meal pill, item names, tag chips, comment preview, time ago. "See all" goes to the Reviews tab.
+
+15) QUICK ACTIONS ROW (big orange pills)
+- Edit Menu, Show QR Poster, Export Report, Demo Tools (only in demo mode).
+
+=====================================
+ITEM DETAIL SHEET (bottom sheet, opened from leaderboard or reviews)
+=====================================
+- Large item image on tilted orange rectangle, name, veg/non-veg mark.
+- Average rating, total reviews, 7-day sparkline, rating distribution, top 5 tags, 3 sample comments, and a mini MessBot line about this item only ("Students like it but say it's too oily").
+- Buttons: "View all reviews", "Edit item".
+
+=====================================
+INSIGHTS TAB
+=====================================
+- Week in Review card: MessBot weekly summary (best day, worst day, most improved item, most repeated complaint).
+- Compare mode: pick two periods or two meals and show side by side KPIs with green/red differences.
+- Tag explorer: all tags in a searchable list with counts and 30-day sparkline. Tap to filter.
+- Word cloud of comment words (build with react-native-svg, sized by frequency; ignore stop words, handle Hinglish like "namak", "thanda", "kam").
+- "Improvement tracker": before vs after rating for an item after the manager marks an issue resolved.
+
+=====================================
+SETTINGS TAB
+=====================================
+- Mess name, meal timings (used for auto-detecting meals), student count (for participation rate), change PIN, dark mode toggle (full theme swap), sound and haptics toggles.
+- Notification preferences for alerts.
+- Data: Export CSV of reviews (expo-file-system + expo-sharing), Reset demo data, Add random feedback (for live demos).
+- About and QR poster page.
+
+=====================================
+EXPORT REPORT
+- "Export Report" generates a clean one-page daily PDF (expo-print): date, KPIs, MessBot digest, top complaints, checklist. Shares via the system share sheet.
+
+=====================================
+BACKEND (extend existing)
+- GET /api/dashboard?date=&meal=&range= returns KPIs, distribution, meal stats, complaint/praise tags with trends, item leaderboard, trend series, heatmap, hourly counts, alerts, and checklist.
+- GET /api/dashboard/live?since= returns new reviews since a timestamp (poll every 10 seconds).
+- POST /api/bot-summary and /api/ask (existing) accept the same filters, cached 10 minutes per filter combo.
+- GET /api/items/:id/stats
+- GET/POST/PATCH /api/actions (checklist with assignee, priority, done)
+- GET /api/alerts, PATCH /api/alerts/:id (dismiss)
+- GET /api/insights/weekly and /api/insights/compare
+- GET /api/export/csv and /api/export/report
+Compute all stats server-side. Send Claude only aggregated numbers plus up to 60 sampled comments, never the full database.
+
+SEED DATA
+Make sure the ~250 seeded reviews cover 14 days with realistic patterns: lunch dal too salty most days, dinner rotis cold, Sunday dinner rating dips, breakfast poha praised, hygiene complaint spike on one day so the alert shows, Hinglish comments in about 40% of reviews. Include enough variety that the heatmap, trends and alerts all look interesting.
+
+PERFORMANCE
+- Use FlatList / FlashList for long lists, memoize charts, and keep animations on the UI thread with Reanimated.
+- Respect reduced-motion settings.
+
+BUILD ORDER (do one step at a time and confirm it works before the next)
+1. Tab navigation, top bar, filters, KPI cards
+2. MessBot digest and action checklist
+3. Meal cards, distribution, complaints/praises, item leaderboard
+4. Trend chart, heatmap, time of day, alerts, live feed
+5. Item Detail sheet and Insights tab
+6. Settings, export, demo tools
