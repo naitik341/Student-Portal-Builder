@@ -21,6 +21,7 @@ import type {
 
 import type {
   BadRequestResponse,
+  DeliveredFeedback,
   Error,
   FeedbackReceipt,
   FeedbackSubmission,
@@ -29,6 +30,7 @@ import type {
   GetManagedMenuParams,
   GetMenuParams,
   HealthStatus,
+  ListDeliveredFeedbackParams,
   MenuItem,
   MenuItemCreatePayload,
   MenuItemUpdatePayload,
@@ -903,6 +905,90 @@ export const useSubmitFeedback = <TError = ErrorType<BadRequestResponse | Error>
       > => {
       return useMutation(getSubmitFeedbackMutationOptions(options));
     }
+
+export const getListDeliveredFeedbackUrl = (params: ListDeliveredFeedbackParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/feedback/manage?${stringifiedParams}` : `/api/feedback/manage`
+}
+
+/**
+ * @summary List delivered student feedback for a date and meal (manager only)
+ */
+export const listDeliveredFeedback = async (params: ListDeliveredFeedbackParams, options?: Parameters<typeof customFetch>[1]): Promise<DeliveredFeedback[]> => {
+
+  return customFetch<DeliveredFeedback[]>(getListDeliveredFeedbackUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDeliveredFeedbackQueryKey = (params?: ListDeliveredFeedbackParams,) => {
+    return [
+    `/api/feedback/manage`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListDeliveredFeedbackQueryOptions = <TData = Awaited<ReturnType<typeof listDeliveredFeedback>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>>(params: ListDeliveredFeedbackParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDeliveredFeedback>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDeliveredFeedbackQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDeliveredFeedback>>> = ({ signal }) => listDeliveredFeedback(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDeliveredFeedback>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDeliveredFeedbackQueryResult = NonNullable<Awaited<ReturnType<typeof listDeliveredFeedback>>>
+export type ListDeliveredFeedbackQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>
+
+
+/**
+ * @summary List delivered student feedback for a date and meal (manager only)
+ */
+
+export function useListDeliveredFeedback<TData = Awaited<ReturnType<typeof listDeliveredFeedback>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>>(
+ params: ListDeliveredFeedbackParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDeliveredFeedback>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDeliveredFeedbackQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetFeedbackSummaryUrl = () => {
 

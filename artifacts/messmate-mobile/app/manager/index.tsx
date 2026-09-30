@@ -107,6 +107,14 @@ export default function ManagerDashboard() {
           <Text style={styles.welcomeCopy}>Manage the student menu and turn their feedback into something actionable.</Text>
         </View>
 
+        <Link href="/manager/feedback" asChild>
+          <Pressable testID="manager-view-feedback" accessibilityRole="link" style={({ pressed }) => [styles.feedbackLink, pressed && styles.pressed]}>
+            <Ionicons name="chatbubbles-outline" size={21} color={C.white} />
+            <Text style={styles.feedbackLinkText}>VIEW DELIVERED FEEDBACK</Text>
+            <Ionicons name="arrow-forward" size={17} color={C.white} />
+          </Pressable>
+        </Link>
+
         <View style={styles.sectionHeader}>
           <View style={{ flex: 1 }}>
             <Text style={styles.sectionKicker}>WHAT STUDENTS ARE SAYING</Text>
@@ -181,6 +189,8 @@ const styles = StyleSheet.create({
   title: { color: C.ink, fontFamily: BOLD, fontSize: 23, lineHeight: 28 },
   editMenuButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, minHeight: 45, paddingHorizontal: 13, borderRadius: 15, backgroundColor: C.orange },
   editMenuText: { color: C.white, fontFamily: BOLD, fontSize: 11 },
+  feedbackLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, minHeight: 52, borderRadius: 17, backgroundColor: C.orange },
+  feedbackLinkText: { color: C.white, fontFamily: BOLD, fontSize: 12 },
   welcomeCard: { backgroundColor: C.ink, borderRadius: 22, padding: 21, overflow: 'hidden' },
   welcomeIcon: { width: 44, height: 44, backgroundColor: C.white, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   welcomeTitle: { color: C.white, fontFamily: BOLD, fontSize: 20, letterSpacing: -0.5 },

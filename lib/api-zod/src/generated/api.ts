@@ -237,6 +237,24 @@ export const SubmitFeedbackResponse = zod.object({
 
 
 /**
+ * @summary List delivered student feedback for a date and meal (manager only)
+ */
+export const ListDeliveredFeedbackQueryParams = zod.object({
+  "date": zod.date(),
+  "meal": zod.enum(['Breakfast', 'Lunch', 'Dinner'])
+})
+
+export const ListDeliveredFeedbackResponseItem = zod.object({
+  "items": zod.array(zod.string()),
+  "rating": zod.number().int(),
+  "tags": zod.array(zod.string()),
+  "comment": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+export const ListDeliveredFeedbackResponse = zod.array(ListDeliveredFeedbackResponseItem)
+
+
+/**
  * @summary Generate an AI summary of feedback grouped by item (manager only)
  */
 export const GetFeedbackSummaryResponse = zod.object({

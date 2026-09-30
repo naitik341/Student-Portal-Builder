@@ -7,6 +7,7 @@
  */
 
 export * from './badRequestResponse';
+export * from './deliveredFeedback';
 export * from './error';
 export * from './feedbackReceipt';
 export * from './feedbackSubmission';
@@ -16,6 +17,7 @@ export * from './forbiddenResponse';
 export * from './getManagedMenuParams';
 export * from './getMenuParams';
 export * from './healthStatus';
+export * from './listDeliveredFeedbackParams';
 export * from './meal';
 export * from './menuItem';
 export * from './menuItemCreatePayload';

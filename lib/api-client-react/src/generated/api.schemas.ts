@@ -107,6 +107,14 @@ export interface FeedbackReceipt {
   duplicate: boolean;
 }
 
+export interface DeliveredFeedback {
+  items: string[];
+  rating: number;
+  tags: string[];
+  comment: string;
+  createdAt: string;
+}
+
 export interface FeedbackTagCount {
   item: string;
   tag: string;
@@ -153,5 +161,10 @@ meal?: Meal;
 
 export type GetManagedMenuParams = {
 meal?: Meal;
+};
+
+export type ListDeliveredFeedbackParams = {
+date: string;
+meal: Meal;
 };
 

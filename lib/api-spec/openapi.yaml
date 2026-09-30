@@ -270,6 +270,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /feedback/manage:
+    get:
+      operationId: listDeliveredFeedback
+      tags: [feedback]
+      summary: List delivered student feedback for a date and meal (manager only)
+      security:
+        - ClerkBearer: []
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: meal
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/Meal"
+      responses:
+        "200":
+          description: Delivered feedback, newest first; contains no student or device identifiers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeliveredFeedback"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /summary:
     get:
       operationId: getFeedbackSummary
@@ -474,6 +508,25 @@ components:
         duplicate:
           type: boolean
       required: [clientSubmissionId, createdAt, duplicate]
+    DeliveredFeedback:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: string
+        rating:
+          type: integer
+        tags:
+          type: array
+          items:
+            type: string
+        comment:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [items, rating, tags, comment, createdAt]
     FeedbackTagCount:
       type: object
       properties:

@@ -1,8 +1,9 @@
 import { Router, type IRouter } from "express";
 import { db, feedback } from "@workspace/db";
-import { eq } from "drizzle-orm";
-import { SubmitFeedbackBody, SubmitFeedbackResponse } from "@workspace/api-zod";
+import { and, desc, eq } from "drizzle-orm";
+import { ListDeliveredFeedbackResponse, SubmitFeedbackBody, SubmitFeedbackResponse } from "@workspace/api-zod";
 import type { RequestHandler } from "express";
+import { requireManager } from "../middlewares/managerAuth";
 
 const router: IRouter = Router();
 const feedbackLimitWindowMs = 60_000;
@@ -43,6 +44,35 @@ const rateLimitFeedback: RequestHandler = (req, res, next) => {
   }
   next();
 };
+
+router.get("/feedback/manage", requireManager, async (req, res, next) => {
+  const { date, meal } = req.query;
+  if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+      Number.isNaN(Date.parse(`${date}T00:00:00Z`)) ||
+      new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) !== date ||
+      (meal !== "Breakfast" && meal !== "Lunch" && meal !== "Dinner")) {
+    res.status(400).json({ error: "Invalid date or meal" });
+    return;
+  }
+
+  try {
+    const rows = await db.select({
+      items: feedback.items,
+      rating: feedback.rating,
+      tags: feedback.tags,
+      comment: feedback.comment,
+      createdAt: feedback.createdAt,
+    }).from(feedback)
+      .where(and(eq(feedback.mealDate, date), eq(feedback.meal, meal)))
+      .orderBy(desc(feedback.createdAt), desc(feedback.id));
+    res.json(ListDeliveredFeedbackResponse.parse(rows.map((row) => ({
+      ...row,
+      createdAt: row.createdAt.toISOString(),
+    }))));
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.post("/feedback", rateLimitFeedback, async (req, res, next) => {
   const parsed = SubmitFeedbackBody.safeParse(req.body);
