@@ -1,20 +1,40 @@
-// Export your models here. Add one export per file
-// export * from "./posts";
-//
-// Each model/table should ideally be split into different files.
-// Each model/table should define a Drizzle table, insert schema, and types:
-//
-//   import { pgTable, text, serial } from "drizzle-orm/pg-core";
-//   import { createInsertSchema } from "drizzle-zod";
-//   import { z } from "zod/v4";
-//
-//   export const postsTable = pgTable("posts", {
-//     id: serial("id").primaryKey(),
-//     title: text("title").notNull(),
-//   });
-//
-//   export const insertPostSchema = createInsertSchema(postsTable).omit({ id: true });
-//   export type InsertPost = z.infer<typeof insertPostSchema>;
-//   export type Post = typeof postsTable.$inferSelect;
+import {
+  boolean,
+  integer,
+  jsonb,
+  pgTable,
+  serial,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
 
-export {}
+export const meals = ["Breakfast", "Lunch", "Dinner"] as const;
+export type Meal = (typeof meals)[number];
+
+export const menuItems = pgTable("menu_items", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  imageData: text("image_data"),
+  isVeg: boolean("is_veg").notNull().default(true),
+  meals: jsonb("meals").$type<Meal[]>().notNull().default([]),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+});
+
+export const settings = pgTable("settings", {
+  id: integer("id").primaryKey().default(1),
+  headingLine1: text("heading_line1").notNull().default("WHAT DID YOU"),
+  headingLine2: text("heading_line2").notNull().default("ORDER?"),
+  menuSeeded: boolean("menu_seeded").notNull().default(false),
+});
+
+export const feedback = pgTable("feedback", {
+  id: serial("id").primaryKey(),
+  clientSubmissionId: text("client_submission_id").notNull().unique(),
+  meal: text("meal").$type<Meal>().notNull(),
+  items: jsonb("items").$type<string[]>().notNull(),
+  rating: integer("rating").notNull(),
+  tags: jsonb("tags").$type<string[]>().notNull().default([]),
+  comment: text("comment").notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+});

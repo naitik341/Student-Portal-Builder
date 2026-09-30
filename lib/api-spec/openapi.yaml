@@ -10,6 +10,14 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: menu
+    description: Student menu and staff menu management
+  - name: settings
+    description: Student screen settings
+  - name: feedback
+    description: Student feedback submissions
+  - name: summary
+    description: AI-generated staff feedback summaries
 paths:
   /healthz:
     get:
@@ -24,7 +32,299 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /menu:
+    get:
+      operationId: getMenu
+      tags: [menu]
+      summary: List active menu items
+      parameters:
+        - in: query
+          name: meal
+          required: false
+          schema:
+            $ref: "#/components/schemas/Meal"
+      responses:
+        "200":
+          description: Active menu items in display order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MenuItem"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      operationId: createMenuItem
+      tags: [menu]
+      summary: Create a menu item (manager only)
+      security:
+        - ClerkBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MenuItemCreatePayload"
+      responses:
+        "201":
+          description: Created menu item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MenuItem"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+  /menu/manage:
+    get:
+      operationId: getManagedMenu
+      tags: [menu]
+      summary: List all menu items, including inactive ones (manager only)
+      security:
+        - ClerkBearer: []
+      parameters:
+        - in: query
+          name: meal
+          required: false
+          schema:
+            $ref: "#/components/schemas/Meal"
+      responses:
+        "200":
+          description: Menu items in display order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MenuItem"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /menu/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    put:
+      operationId: updateMenuItem
+      tags: [menu]
+      summary: Update a menu item (manager only)
+      security:
+        - ClerkBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MenuItemUpdatePayload"
+      responses:
+        "200":
+          description: Updated menu item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MenuItem"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+    delete:
+      operationId: deleteMenuItem
+      tags: [menu]
+      summary: Delete a menu item (manager only)
+      security:
+        - ClerkBearer: []
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /menu/reorder:
+    post:
+      operationId: reorderMenuItems
+      tags: [menu]
+      summary: Set the complete menu item order (manager only)
+      security:
+        - ClerkBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReorderMenuBody"
+      responses:
+        "200":
+          description: Reordered menu items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MenuItem"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      summary: Get Item Select screen heading text
+      responses:
+        "200":
+          description: Screen heading text
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScreenSettings"
+    put:
+      operationId: updateSettings
+      tags: [settings]
+      summary: Update Item Select screen heading text (manager only)
+      security:
+        - ClerkBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScreenSettings"
+      responses:
+        "200":
+          description: Updated screen settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScreenSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /feedback:
+    post:
+      operationId: submitFeedback
+      tags: [feedback]
+      summary: Submit feedback idempotently
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeedbackSubmission"
+      responses:
+        "201":
+          description: New submission stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeedbackReceipt"
+        "200":
+          description: Submission already stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeedbackReceipt"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          description: Feedback submissions are rate limited
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /summary:
+    get:
+      operationId: getFeedbackSummary
+      tags: [summary]
+      summary: Generate an AI summary of feedback grouped by item (manager only)
+      security:
+        - ClerkBearer: []
+      responses:
+        "200":
+          description: AI feedback summary and grouped tag counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeedbackSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "502":
+          description: Summary service failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
+  securitySchemes:
+    ClerkBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Clerk authentication required
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Verified primary email is not an authorized manager
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TooLarge:
+      description: Request body or image data URL exceeds size limit
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +333,156 @@ components:
           type: string
       required:
         - status
+    Meal:
+      type: string
+      enum: [Breakfast, Lunch, Dinner]
+    MenuItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        imageData:
+          type: [string, "null"]
+          description: Base64 image data URL, limited to optimized images about 600px wide
+        isVeg:
+          type: boolean
+        meals:
+          type: array
+          items:
+            $ref: "#/components/schemas/Meal"
+        sortOrder:
+          type: integer
+        active:
+          type: boolean
+      required: [id, name, imageData, isVeg, meals, sortOrder, active]
+    MenuItemCreatePayload:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 20
+        imageData:
+          type: [string, "null"]
+        isVeg:
+          type: boolean
+        meals:
+          type: array
+          items:
+            $ref: "#/components/schemas/Meal"
+        sortOrder:
+          type: integer
+          minimum: 0
+        active:
+          type: boolean
+      required: [name, imageData, isVeg, meals]
+    MenuItemUpdatePayload:
+      allOf:
+        - $ref: "#/components/schemas/MenuItemCreatePayload"
+        - type: object
+          properties:
+            sortOrder:
+              type: integer
+              minimum: 0
+            active:
+              type: boolean
+          required: [sortOrder, active]
+    ReorderMenuBody:
+      type: object
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: integer
+            minimum: 1
+      required: [ids]
+    ScreenSettings:
+      type: object
+      properties:
+        headingLine1:
+          type: string
+          minLength: 1
+          maxLength: 60
+        headingLine2:
+          type: string
+          minLength: 1
+          maxLength: 60
+      required: [headingLine1, headingLine2]
+    FeedbackSubmission:
+      type: object
+      properties:
+        clientSubmissionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        meal:
+          $ref: "#/components/schemas/Meal"
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        tags:
+          type: array
+          items:
+            type: string
+        comment:
+          type: string
+          maxLength: 2000
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - clientSubmissionId
+        - meal
+        - items
+        - rating
+        - tags
+        - comment
+        - createdAt
+    FeedbackReceipt:
+      type: object
+      properties:
+        clientSubmissionId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        duplicate:
+          type: boolean
+      required: [clientSubmissionId, createdAt, duplicate]
+    FeedbackTagCount:
+      type: object
+      properties:
+        item:
+          type: string
+        tag:
+          type: string
+        count:
+          type: integer
+      required: [item, tag, count]
+    FeedbackSummary:
+      type: object
+      properties:
+        summary:
+          type: string
+        counts:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeedbackTagCount"
+      required: [summary, counts]
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
 

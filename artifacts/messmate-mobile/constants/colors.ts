@@ -15,43 +15,46 @@
 const colors = {
   light: {
     // Legacy aliases (kept for backward compatibility)
-    text: '#293343',
-    tint: '#FF7A1A',
+    text: '#000000',
+    tint: '#F06A14',
 
     // Core surfaces
-    background: '#FFF8F0',
-    foreground: '#293343',
+    background: '#F1ECEC',
+    foreground: '#000000',
 
     // Cards / elevated surfaces
-    card: '#FFFEFC',
-    cardForeground: '#293343',
+    card: '#FCFCFC',
+    cardForeground: '#000000',
 
     // Primary action color (buttons, links, active states)
-    primary: '#FF7A1A',
+    primary: '#F06A14',
     primaryForeground: '#ffffff',
+    primaryPressed: '#D9570A',
+    veg: '#118A1A',
+    nonVeg: '#D9151B',
 
     // Secondary / less-emphasis interactive surfaces
-    secondary: '#FFF0E1',
-    secondaryForeground: '#7A4B2A',
+    secondary: '#F7DED0',
+    secondaryForeground: '#000000',
 
     // Muted / subdued elements (dividers, timestamps, placeholders)
-    muted: '#F5EAE0',
-    mutedForeground: '#82776D',
+    muted: '#E9E1DF',
+    mutedForeground: '#645D5D',
 
     // Accent highlights (badges, selected items, focus rings)
-    accent: '#FFE9D5',
-    accentForeground: '#B94C00',
+    accent: '#F9D9C4',
+    accentForeground: '#9F3900',
 
     // Destructive actions (delete, error states)
-    destructive: '#EF4444',
+    destructive: '#D9151B',
     destructiveForeground: '#ffffff',
 
     // Borders and input outlines
-    border: '#F0E1D2',
-    input: '#E9D9C9',
-    success: '#22C55E',
+    border: '#000000',
+    input: '#968C8A',
+    success: '#118A1A',
     breakfast: '#EAB308',
-    lunch: '#FF7A1A',
+    lunch: '#F06A14',
     dinner: '#6366F1',
     ratingOne: '#FCA5A5',
     ratingTwo: '#FDBA74',

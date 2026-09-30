@@ -1,0 +1,1 @@
+- [Staff access policy](staff-access-policy.md) — manager access must default to denied until a verified staff email is explicitly allowlisted.

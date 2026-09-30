@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AccessibilityInfo,
   ActivityIndicator,
-  Alert,
   Animated,
   AppState,
   Keyboard,
@@ -20,16 +19,27 @@ import * as Haptics from 'expo-haptics';
 import * as Network from 'expo-network';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import ItemSelect, { type MenuItem as SelectMenuItem } from '@/components/ItemSelect';
+import {
+  getGetMenuQueryKey,
+  getGetSettingsQueryKey,
+  submitFeedback,
+  useGetMenu,
+  useGetSettings,
+} from '@workspace/api-client-react';
 
 type Meal = 'Breakfast' | 'Lunch' | 'Dinner';
-type Screen = 'meal' | 'rating' | 'tags' | 'thanks' | 'already';
+type Screen = 'meal' | 'items' | 'rating' | 'tags' | 'thanks' | 'already';
 type Palette = ReturnType<typeof useColors>;
 
 interface Submission {
+  clientSubmissionId: string;
   meal: Meal;
+  items: string[];
   rating: number;
   tags: string[];
   comment: string;
@@ -38,6 +48,10 @@ interface Submission {
 
 const SUBMISSIONS_KEY = '@messmate/submissions-v1';
 const OFFLINE_QUEUE_KEY = '@messmate/offline-queue-v1';
+const MENU_CACHE_KEY = (meal: Meal) => `@messmate/menu-cache-v1:${meal}`;
+const SETTINGS_CACHE_KEY = (meal: Meal) => `@messmate/settings-cache-v1:${meal}`;
+const MAX_QUEUE_RETRIES = 5;
+const MAX_RETRY_DELAY_MS = 60_000;
 const negativeTags = [
   'Too salty',
   'Too oily',
@@ -75,6 +89,60 @@ const mealOptions: { meal: Meal; icon: string; color: keyof Palette }[] = [
   { meal: 'Lunch', icon: '🍛', color: 'lunch' },
   { meal: 'Dinner', icon: '🌙', color: 'dinner' },
 ];
+
+function createSubmissionId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function normalizeSubmission(value: unknown): Submission {
+  const stored = value && typeof value === 'object' ? value as Partial<Submission> : {};
+  return {
+    ...stored,
+    clientSubmissionId: typeof stored.clientSubmissionId === 'string' && stored.clientSubmissionId
+      ? stored.clientSubmissionId
+      : createSubmissionId(),
+    meal: stored.meal ?? 'Breakfast',
+    items: Array.isArray(stored.items) && stored.items.length > 0 ? stored.items : ['Unspecified item'],
+    rating: typeof stored.rating === 'number' ? stored.rating : 3,
+    tags: Array.isArray(stored.tags) ? stored.tags : [],
+    comment: typeof stored.comment === 'string' ? stored.comment : '',
+    createdAt: typeof stored.createdAt === 'string' ? stored.createdAt : new Date().toISOString(),
+  };
+}
+
+function validCachedMenuItems(value: unknown, meal: Meal): SelectMenuItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is SelectMenuItem =>
+    !!item &&
+    typeof item === 'object' &&
+    typeof item.id === 'number' &&
+    typeof item.name === 'string' &&
+    (typeof item.imageData === 'string' || item.imageData === null) &&
+    typeof item.isVeg === 'boolean' &&
+    Array.isArray(item.meals) &&
+    item.meals.includes(meal) &&
+    typeof item.sortOrder === 'number' &&
+    item.active === true,
+  );
+}
+
+function queueRetryDelay(error: unknown, attempt: number) {
+  const apiError = error && typeof error === 'object'
+    ? error as { status?: unknown; headers?: { get?: (name: string) => string | null } }
+    : null;
+  if (apiError?.status === 429) {
+    const retryAfter = apiError.headers?.get?.('retry-after');
+    const seconds = retryAfter ? Number(retryAfter) : NaN;
+    const retryDate = retryAfter && Number.isNaN(seconds) ? Date.parse(retryAfter) : NaN;
+    const requestedDelay = Number.isFinite(seconds)
+      ? seconds * 1000
+      : Number.isFinite(retryDate)
+        ? Math.max(0, retryDate - Date.now())
+        : 0;
+    if (requestedDelay > 0) return Math.min(requestedDelay, MAX_RETRY_DELAY_MS);
+  }
+  return Math.min(1000 * 2 ** Math.max(0, attempt - 1), MAX_RETRY_DELAY_MS);
+}
 
 function localDateKey(date: Date) {
   const year = date.getFullYear();
@@ -944,9 +1012,11 @@ export default function MessMateScreen() {
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [suggested, setSuggested] = useState<Meal>(suggestedMeal);
   const [screen, setScreen] = useState<Screen>('meal');
   const [meal, setMeal] = useState<Meal | null>(null);
+  const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
   const [alreadyMeal, setAlreadyMeal] = useState<Meal | null>(null);
   const [rating, setRating] = useState<number | null>(null);
   const [tags, setTags] = useState<string[]>([]);
@@ -954,21 +1024,59 @@ export default function MessMateScreen() {
   const [commentOpen, setCommentOpen] = useState(false);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [offlineQueue, setOfflineQueue] = useState<Submission[]>([]);
+  const [cachedItems, setCachedItems] = useState<SelectMenuItem[] | null>(null);
+  const [cachedSettings, setCachedSettings] = useState<{ headingLine1: string; headingLine2: string } | null>(null);
+  const [cachedItemsMeal, setCachedItemsMeal] = useState<Meal | null>(null);
+  const [cachedSettingsMeal, setCachedSettingsMeal] = useState<Meal | null>(null);
+  const [cacheLoading, setCacheLoading] = useState(false);
+  const [cacheRefreshToken, setCacheRefreshToken] = useState(0);
   const [online, setOnline] = useState(true);
   const [savedOffline, setSavedOffline] = useState(false);
+  const [queuedSubmissionId, setQueuedSubmissionId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [studentCount, setStudentCount] = useState(0);
+  const onlineRef = useRef(online);
+  onlineRef.current = online;
+  const flushLock = useRef(false);
+  const flushRequested = useRef(false);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryAttempt = useRef(0);
+  const retryExhausted = useRef(false);
+  const previousOnline = useRef(online);
+  const queueMutationTail = useRef<Promise<void>>(Promise.resolve());
+  const freshMenuMeal = useRef<Meal | null>(null);
+  const freshSettingsLoaded = useRef(false);
   const slide = useRef(new Animated.Value(0)).current;
-  const progressValue = useRef(new Animated.Value(1 / 3)).current;
+  const progressValue = useRef(new Animated.Value(1 / 4)).current;
   const previousScreen = useRef<Screen>('meal');
   const direction = useRef(1);
   const countValue = useRef(new Animated.Value(0)).current;
   const checkDraw = useRef(new Animated.Value(48)).current;
   const selectionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const menuQuery = useGetMenu({ meal: meal ?? undefined }, {
+    query: { enabled: screen === 'items' && meal !== null, queryKey: getGetMenuQueryKey({ meal: meal ?? undefined }) },
+  });
+  const settingsQuery = useGetSettings({
+    query: { enabled: screen === 'items', queryKey: getGetSettingsQueryKey() },
+  });
+  const visibleMenuItems = menuQuery.data ?? (cachedItemsMeal === meal ? cachedItems : null);
+  const visibleSettings = settingsQuery.data ?? (cachedSettingsMeal === meal ? cachedSettings : null);
+  const withQueueStorageLock = useCallback(async <T,>(operation: () => Promise<T>): Promise<T> => {
+    const predecessor = queueMutationTail.current;
+    let release: () => void = () => {};
+    queueMutationTail.current = new Promise<void>((resolve) => { release = resolve; });
+    await predecessor;
+    try {
+      return await operation();
+    } finally {
+      release();
+    }
+  }, []);
+
   const readLocalData = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
@@ -979,8 +1087,14 @@ export default function MessMateScreen() {
       if (!Array.isArray(storedSubmissions) || !Array.isArray(storedQueue)) {
         throw new Error('Saved feedback data could not be read.');
       }
-      setSubmissions(storedSubmissions as Submission[]);
-      setOfflineQueue(storedQueue as Submission[]);
+      const normalizedSubmissions = (storedSubmissions as unknown[]).map(normalizeSubmission);
+      const normalizedQueue = (storedQueue as unknown[]).map(normalizeSubmission);
+      await AsyncStorage.multiSet([
+        [SUBMISSIONS_KEY, JSON.stringify(normalizedSubmissions)],
+        [OFFLINE_QUEUE_KEY, JSON.stringify(normalizedQueue)],
+      ]);
+      setSubmissions(normalizedSubmissions);
+      setOfflineQueue(normalizedQueue);
     } catch {
       setLoadError('We couldn’t load saved feedback on this device. Try again.');
     } finally {
@@ -988,21 +1102,178 @@ export default function MessMateScreen() {
     }
   }, []);
 
+  const flushQueuedSubmissions = useCallback(async () => {
+    flushRequested.current = true;
+    if (!onlineRef.current || loading || flushLock.current || retryTimer.current) return;
+    if (retryExhausted.current) {
+      retryAttempt.current = 0;
+      retryExhausted.current = false;
+    }
+    flushLock.current = true;
+    let failedRequest: unknown = null;
+    try {
+      while (onlineRef.current) {
+        flushRequested.current = false;
+        const queue = await withQueueStorageLock(async () => {
+          const stored: unknown = JSON.parse((await AsyncStorage.getItem(OFFLINE_QUEUE_KEY)) ?? '[]');
+          if (!Array.isArray(stored)) throw new Error('Saved feedback queue is invalid.');
+          const normalized = (stored as unknown[]).map(normalizeSubmission);
+          if (JSON.stringify(normalized) !== JSON.stringify(stored)) {
+            await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(normalized));
+          }
+          return normalized;
+        });
+        setOfflineQueue(queue);
+        if (queue.length === 0) {
+          if (flushRequested.current) continue;
+          break;
+        }
+        const pending = queue[0];
+        try {
+          await submitFeedback(pending);
+        } catch (error) {
+          failedRequest = error;
+          break;
+        }
+        const remainingQueue = await withQueueStorageLock(async () => {
+          const stored: unknown = JSON.parse((await AsyncStorage.getItem(OFFLINE_QUEUE_KEY)) ?? '[]');
+          const latestQueue = Array.isArray(stored)
+            ? (stored as unknown[]).map(normalizeSubmission)
+            : [];
+          const remaining = latestQueue.filter(
+            (item) => item.clientSubmissionId !== pending.clientSubmissionId,
+          );
+          await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
+          return remaining;
+        });
+        setOfflineQueue(remainingQueue);
+        retryAttempt.current = 0;
+      }
+    } catch (error) {
+      failedRequest = error;
+    } finally {
+      flushLock.current = false;
+    }
+    if (failedRequest) {
+      flushRequested.current = false;
+      retryAttempt.current += 1;
+      if (onlineRef.current && retryAttempt.current <= MAX_QUEUE_RETRIES) {
+        const delay = queueRetryDelay(failedRequest, retryAttempt.current);
+        retryTimer.current = setTimeout(() => {
+          retryTimer.current = null;
+          void flushQueuedSubmissions();
+        }, delay);
+      } else {
+        retryExhausted.current = true;
+      }
+      return;
+    }
+    if (flushRequested.current && onlineRef.current) void flushQueuedSubmissions();
+  }, [loading, online, withQueueStorageLock]);
+
+  useEffect(() => {
+    return () => {
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+    };
+  }, []);
+
   useEffect(() => {
     void readLocalData();
   }, [readLocalData]);
 
   useEffect(() => {
+    if (screen !== 'items' || !meal) return;
+    let active = true;
+    freshMenuMeal.current = null;
+    freshSettingsLoaded.current = false;
+    setCacheLoading(true);
+    void AsyncStorage.multiGet([MENU_CACHE_KEY(meal), SETTINGS_CACHE_KEY(meal)])
+      .then((values) => {
+        const storedItems: unknown = values[0][1] ? JSON.parse(values[0][1]!) : null;
+        const storedSettings: unknown = values[1][1] ? JSON.parse(values[1][1]!) : null;
+        if (!active) return;
+        if (freshMenuMeal.current !== meal) {
+          setCachedItems(Array.isArray(storedItems) ? validCachedMenuItems(storedItems, meal) : null);
+          setCachedItemsMeal(meal);
+        }
+        if (!freshSettingsLoaded.current) {
+          const settings = storedSettings && typeof storedSettings === 'object'
+            ? storedSettings as { headingLine1?: unknown; headingLine2?: unknown }
+            : null;
+          setCachedSettings(
+            settings &&
+            typeof settings.headingLine1 === 'string' &&
+            typeof settings.headingLine2 === 'string'
+              ? { headingLine1: settings.headingLine1, headingLine2: settings.headingLine2 }
+              : null,
+          );
+          setCachedSettingsMeal(meal);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) {
+          setCacheLoading(false);
+        }
+      });
+    return () => { active = false; };
+  }, [cacheRefreshToken, meal, screen]);
+
+  useEffect(() => {
+    if (!meal || !menuQuery.data) return;
+    const activeItems = menuQuery.data.filter((item) => item.active && item.meals.includes(meal));
+    freshMenuMeal.current = meal;
+    setCachedItems(activeItems);
+    setCachedItemsMeal(meal);
+    void AsyncStorage.setItem(MENU_CACHE_KEY(meal), JSON.stringify(activeItems)).catch(() => undefined);
+  }, [meal, menuQuery.data]);
+
+  useEffect(() => {
+    if (!settingsQuery.data) return;
+    freshSettingsLoaded.current = true;
+    setCachedSettings(settingsQuery.data);
+    if (meal) {
+      setCachedSettingsMeal(meal);
+    }
+    if (meal) {
+      void AsyncStorage.setItem(SETTINGS_CACHE_KEY(meal), JSON.stringify(settingsQuery.data)).catch(() => undefined);
+    }
+  }, [meal, settingsQuery.data]);
+
+  useEffect(() => {
+    if (!loading && online && offlineQueue.length > 0) {
+      void flushQueuedSubmissions();
+    }
+  }, [flushQueuedSubmissions, loading, offlineQueue.length, online]);
+
+  useEffect(() => {
+    const recoveredConnection = online && !previousOnline.current;
+    if (recoveredConnection) {
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+      retryTimer.current = null;
+      retryAttempt.current = 0;
+      retryExhausted.current = false;
+    }
+    previousOnline.current = online;
+    if (recoveredConnection && !loading && offlineQueue.length > 0) {
+      void flushQueuedSubmissions();
+    }
+  }, [flushQueuedSubmissions, loading, offlineQueue.length, online]);
+
+  useEffect(() => {
     const refreshSuggestion = () => setSuggested(suggestedMeal());
     const interval = setInterval(refreshSuggestion, 60_000);
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') refreshSuggestion();
+      if (state === 'active') {
+        refreshSuggestion();
+        if (onlineRef.current) void flushQueuedSubmissions();
+      }
     });
     return () => {
       clearInterval(interval);
       subscription.remove();
     };
-  }, []);
+  }, [flushQueuedSubmissions]);
 
   useEffect(() => {
     let active = true;
@@ -1046,9 +1317,9 @@ export default function MessMateScreen() {
   useEffect(() => {
     if (previousScreen.current === screen) return;
     previousScreen.current = screen;
-    const stepValue = screen === 'meal' ? 1 / 3 : screen === 'rating' ? 2 / 3 : screen === 'tags' ? 1 : 1;
+    const stepValue = screen === 'meal' ? 1 / 4 : screen === 'items' ? 2 / 4 : screen === 'rating' ? 3 / 4 : 1;
     if (!reduceMotion && screen !== 'thanks' && screen !== 'already') {
-      progressValue.setValue(stepValue < 1 ? Math.max(0, stepValue - 1 / 3) : 2 / 3);
+      progressValue.setValue(stepValue < 1 ? Math.max(0, stepValue - 1 / 4) : 3 / 4);
       Animated.timing(progressValue, {
         toValue: stepValue,
         duration: 260,
@@ -1112,17 +1383,20 @@ export default function MessMateScreen() {
 
   const returnToMeals = useCallback(() => {
     setMeal(null);
+    setSelectedItemIds([]);
     setRating(null);
     setTags([]);
     setComment('');
     setCommentOpen(false);
     setSaveError(null);
+    setQueuedSubmissionId(null);
     goTo('meal', -1);
   }, [goTo]);
 
   const onMealSelect = (selectedMeal: Meal) => {
     setMeal(selectedMeal);
-    const existing = submissions.find(
+    setSelectedItemIds([]);
+    const existing = [...submissions, ...offlineQueue].find(
       (submission) =>
         submission.meal === selectedMeal &&
         localDateKey(new Date(submission.createdAt)) === localDateKey(new Date()),
@@ -1137,7 +1411,7 @@ export default function MessMateScreen() {
         setTags([]);
         setComment('');
         setCommentOpen(false);
-        goTo('rating');
+        goTo('items');
       }
     }, 250);
   };
@@ -1161,7 +1435,11 @@ export default function MessMateScreen() {
     setSaving(true);
     setSaveError(null);
     const submission: Submission = {
+      clientSubmissionId: createSubmissionId(),
       meal,
+      items: selectedItemIds
+        .map((id) => visibleMenuItems?.find((item) => item.id === id)?.name)
+        .filter((name): name is string => !!name),
       rating,
       tags,
       comment: comment.trim(),
@@ -1178,7 +1456,7 @@ export default function MessMateScreen() {
       } catch {
         // Preserve the latest known network status if a fresh check is unavailable.
       }
-      const duplicate = submissions.some(
+      const duplicate = [...submissions, ...offlineQueue].some(
         (item) =>
           item.meal === meal &&
           localDateKey(new Date(item.createdAt)) === localDateKey(new Date()),
@@ -1188,19 +1466,35 @@ export default function MessMateScreen() {
         goTo('already');
         return;
       }
-      const nextSubmissions = [...submissions, submission];
-      const nextQueue = isOnline ? offlineQueue : [...offlineQueue, submission];
-      const storagePairs: [string, string][] = [[SUBMISSIONS_KEY, JSON.stringify(nextSubmissions)]];
-      if (!isOnline) storagePairs.push([OFFLINE_QUEUE_KEY, JSON.stringify(nextQueue)]);
-      await AsyncStorage.multiSet(storagePairs);
-      setSubmissions(nextSubmissions);
-      if (!isOnline) {
-        setOfflineQueue(nextQueue);
-        setSavedOffline(true);
-      } else {
-        setSavedOffline(false);
+      if (submission.items.length === 0) {
+        setSaveError('Please select at least one menu item before submitting feedback.');
+        return;
       }
-      console.log('MessMate feedback submitted:', submission);
+      const nextSubmissions = [...submissions, submission];
+      const nextQueue = await withQueueStorageLock(async () => {
+        const storedQueue: unknown = JSON.parse((await AsyncStorage.getItem(OFFLINE_QUEUE_KEY)) ?? '[]');
+        if (!Array.isArray(storedQueue)) throw new Error('Saved feedback queue is invalid.');
+        const currentQueue = (storedQueue as unknown[]).map(normalizeSubmission);
+        const appendedQueue = [...currentQueue, submission];
+        await AsyncStorage.multiSet([
+          [SUBMISSIONS_KEY, JSON.stringify(nextSubmissions)],
+          [OFFLINE_QUEUE_KEY, JSON.stringify(appendedQueue)],
+        ]);
+        return appendedQueue;
+      });
+      setSubmissions(nextSubmissions);
+      setOfflineQueue(nextQueue);
+      setQueuedSubmissionId(submission.clientSubmissionId);
+      if (isOnline) await flushQueuedSubmissions();
+      const storedAfterSend: unknown = JSON.parse((await AsyncStorage.getItem(OFFLINE_QUEUE_KEY)) ?? '[]');
+      const remainingAfterSend = Array.isArray(storedAfterSend)
+        ? (storedAfterSend as unknown[]).map(normalizeSubmission)
+        : nextQueue;
+      setOfflineQueue(remainingAfterSend);
+      const delivered = !remainingAfterSend.some(
+        (item) => item.clientSubmissionId === submission.clientSubmissionId,
+      );
+      setSavedOffline(!delivered);
       goTo('thanks');
     } catch {
       setSaveError('We couldn’t save your feedback. Please try again.');
@@ -1209,17 +1503,12 @@ export default function MessMateScreen() {
     }
   };
 
-  const showManagerInfo = () => {
-    Alert.alert(
-      'Manager sign in',
-      'Manager tools are not part of this student app yet.',
-    );
-  };
+  const showManagerInfo = () => router.push('/manager/menu');
 
   const onPressInStyle = ({ pressed }: { pressed: boolean }) =>
     pressed && !reduceMotion ? { opacity: 0.86 } : null;
 
-  const isMainStep = screen === 'meal' || screen === 'rating' || screen === 'tags';
+  const isMainStep = screen === 'meal' || screen === 'items' || screen === 'rating' || screen === 'tags';
   const groups =
     rating !== null && rating <= 2
       ? [{ title: 'Let’s fix it', items: negativeTags }]
@@ -1232,6 +1521,50 @@ export default function MessMateScreen() {
 
   const safeTop = Platform.OS === 'web' ? 67 : insets.top;
   const safeBottom = Platform.OS === 'web' ? 34 : insets.bottom;
+  const itemSelectErrors = [
+    menuQuery.error && !visibleMenuItems
+      ? `The menu could not be loaded: ${menuQuery.error instanceof Error ? menuQuery.error.message : 'server request failed'}. No saved menu is available for this meal.`
+      : null,
+    settingsQuery.error && !visibleSettings
+      ? `Screen settings could not be loaded: ${settingsQuery.error instanceof Error ? settingsQuery.error.message : 'server request failed'}. No saved settings are available.`
+      : null,
+  ].filter((message): message is string => message !== null);
+
+  if (screen === 'items' && meal) {
+    return (
+      <>
+        <StatusBar style="dark" />
+        <ItemSelect
+          items={visibleMenuItems ?? []}
+          selectedIds={selectedItemIds}
+          headingLine1={visibleSettings?.headingLine1 ?? 'What did you eat?'}
+          headingLine2={visibleSettings?.headingLine2 ?? 'Select items'}
+          onToggle={(id) => setSelectedItemIds((current) =>
+            current.includes(id) ? current.filter((itemId) => itemId !== id) : [...current, id],
+          )}
+          onProceed={() => goTo('rating')}
+          onBack={() => {
+            if (selectionTimer.current) clearTimeout(selectionTimer.current);
+            setSelectedItemIds([]);
+            setMeal(null);
+            goTo('meal', -1);
+          }}
+          loading={
+            (cacheLoading && (!visibleMenuItems || !visibleSettings)) ||
+            (!visibleMenuItems && menuQuery.isLoading) ||
+            (!visibleSettings && settingsQuery.isLoading)
+          }
+          error={itemSelectErrors.length > 0 ? itemSelectErrors.join(' ') : null}
+          onRetry={() => {
+            setCacheRefreshToken((current) => current + 1);
+            void menuQuery.refetch();
+            void settingsQuery.refetch();
+          }}
+          reduceMotion={reduceMotion}
+        />
+      </>
+    );
+  }
 
   return (
     <View
@@ -1252,6 +1585,7 @@ export default function MessMateScreen() {
           <Pressable
             testID="manager-sign-in"
             accessibilityRole="link"
+            accessibilityLabel="Manager sign in"
             onPress={showManagerInfo}
             style={({ pressed }) => [styles.managerLink, onPressInStyle({ pressed })]}
           >
@@ -1261,7 +1595,7 @@ export default function MessMateScreen() {
 
         {isMainStep ? (
           <View
-            accessibilityLabel={`Step ${screen === 'meal' ? 1 : screen === 'rating' ? 2 : 3} of 3`}
+              accessibilityLabel={`Step ${screen === 'meal' ? 1 : screen === 'items' ? 2 : screen === 'rating' ? 3 : 4} of 4`}
             style={styles.progressTrack}
           >
             <Animated.View
@@ -1336,13 +1670,12 @@ export default function MessMateScreen() {
             <View style={{ flex: 1 }}>
               <View style={styles.stepTop}>
                 <Pressable
-                  testID="back-to-meals"
+                  testID="back-to-items"
                   accessibilityRole="button"
-                  accessibilityLabel="Back to meal selection"
+                  accessibilityLabel="Back to item selection"
                   onPress={() => {
-                    if (selectionTimer.current) clearTimeout(selectionTimer.current);
-                    setMeal(null);
-                    goTo('meal', -1);
+                    setSaveError(null);
+                    goTo('items', -1);
                   }}
                   style={({ pressed }) => [styles.backButton, onPressInStyle({ pressed })]}
                 >
@@ -1524,9 +1857,9 @@ export default function MessMateScreen() {
               <Text style={styles.studentStat}>
                 You’re one of {studentCount} students who rated {meal?.toLowerCase()} today
               </Text>
-              {savedOffline ? (
+              {savedOffline && offlineQueue.some((item) => item.clientSubmissionId === queuedSubmissionId) ? (
                 <Text style={styles.offlineNote}>
-                  Saved, will send when online. Your feedback is queued on this device.
+                  Saved on this device and waiting to send. Your feedback is safely queued.
                 </Text>
               ) : null}
               <View style={styles.successActions}>
