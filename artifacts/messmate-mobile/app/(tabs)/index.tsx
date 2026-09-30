@@ -25,6 +25,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import ItemSelect, { type MenuItem as SelectMenuItem } from '@/components/ItemSelect';
 import {
+  type Meal,
+  type Submission,
+  deliverFeedback,
+  readFeedbackQueue,
+  restoreFeedback,
+  saveFeedback,
+} from '@/lib/feedbackQueue';
+import {
   getGetMenuQueryKey,
   getGetSettingsQueryKey,
   submitFeedback,
@@ -32,26 +40,8 @@ import {
   useGetSettings,
 } from '@workspace/api-client-react';
 
-type Meal = 'Breakfast' | 'Lunch' | 'Dinner';
 type Screen = 'meal' | 'items' | 'rating' | 'tags' | 'thanks' | 'already';
 type Palette = ReturnType<typeof useColors>;
-
-interface Submission {
-  clientSubmissionId: string;
-  deviceId: string;
-  mealDate: string;
-  meal: Meal;
-  items: string[];
-  rating: number;
-  tags: string[];
-  comment: string;
-  createdAt: string;
-  delivery: 'pending' | 'failed' | 'delivered' | 'rejected';
-}
-
-const SUBMISSIONS_KEY = '@messmate/submissions-v1';
-const OFFLINE_QUEUE_KEY = '@messmate/offline-queue-v1';
-const DEVICE_KEY = '@messmate/device-id-v1';
 const MENU_CACHE_KEY = (meal: Meal) => `@messmate/menu-cache-v1:${meal}`;
 const SETTINGS_CACHE_KEY = (meal: Meal) => `@messmate/settings-cache-v1:${meal}`;
 const MAX_QUEUE_RETRIES = 5;
@@ -96,25 +86,6 @@ const mealOptions: { meal: Meal; icon: string; color: keyof Palette }[] = [
 
 function createSubmissionId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
-}
-
-function normalizeSubmission(value: unknown, deviceId: string): Submission {
-  const stored = value && typeof value === 'object' ? value as Partial<Submission> : {};
-  return {
-    ...stored,
-    clientSubmissionId: typeof stored.clientSubmissionId === 'string' && stored.clientSubmissionId
-      ? stored.clientSubmissionId
-      : createSubmissionId(),
-    deviceId: stored.deviceId || deviceId,
-    mealDate: stored.mealDate || localDateKey(new Date(stored.createdAt || new Date().toISOString())),
-    delivery: stored.delivery || 'pending',
-    meal: stored.meal ?? 'Breakfast',
-    items: Array.isArray(stored.items) && stored.items.length > 0 ? stored.items : ['Unspecified item'],
-    rating: typeof stored.rating === 'number' ? stored.rating : 3,
-    tags: Array.isArray(stored.tags) ? stored.tags : [],
-    comment: typeof stored.comment === 'string' ? stored.comment : '',
-    createdAt: typeof stored.createdAt === 'string' ? stored.createdAt : new Date().toISOString(),
-  };
 }
 
 function validCachedMenuItems(value: unknown, meal: Meal): SelectMenuItem[] {
@@ -1087,32 +1058,16 @@ export default function MessMateScreen() {
     setLoading(true);
     setLoadError(null);
     try {
-      const values = await AsyncStorage.multiGet([SUBMISSIONS_KEY, OFFLINE_QUEUE_KEY, DEVICE_KEY]);
-      const storedSubmissions = values[0][1] ? JSON.parse(values[0][1]!) : [];
-      const storedQueue = values[1][1] ? JSON.parse(values[1][1]!) : [];
-      if (!Array.isArray(storedSubmissions) || !Array.isArray(storedQueue)) {
-        throw new Error('Saved feedback data could not be read.');
-      }
-      deviceId.current = values[2][1] || createSubmissionId();
-      if (!values[2][1]) await AsyncStorage.setItem(DEVICE_KEY, deviceId.current);
-      const normalizedSubmissions = (storedSubmissions as unknown[])
-        .map((item) => normalizeSubmission(item, deviceId.current));
-      // Legacy versions may have saved online ratings locally without delivering them.
-      // Rebuild the queue from local submissions before the first request.
-      const normalizedQueue = normalizedSubmissions.filter(
-        (item) => item.delivery === 'pending' || item.delivery === 'failed');
-      await AsyncStorage.multiSet([
-        [SUBMISSIONS_KEY, JSON.stringify(normalizedSubmissions)],
-        [OFFLINE_QUEUE_KEY, JSON.stringify(normalizedQueue)],
-      ]);
-      setSubmissions(normalizedSubmissions);
-      setOfflineQueue(normalizedQueue);
+      const restored = await withQueueStorageLock(() => restoreFeedback(AsyncStorage, createSubmissionId));
+      deviceId.current = restored.deviceId;
+      setSubmissions(restored.submissions);
+      setOfflineQueue(restored.queue);
     } catch {
       setLoadError('We couldn’t load saved feedback on this device. Try again.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [withQueueStorageLock]);
 
   const flushQueuedSubmissions = useCallback(async () => {
     flushRequested.current = true;
@@ -1127,13 +1082,7 @@ export default function MessMateScreen() {
       while (onlineRef.current) {
         flushRequested.current = false;
         const queue = await withQueueStorageLock(async () => {
-          const stored: unknown = JSON.parse((await AsyncStorage.getItem(OFFLINE_QUEUE_KEY)) ?? '[]');
-          if (!Array.isArray(stored)) throw new Error('Saved feedback queue is invalid.');
-          const normalized = (stored as unknown[]).map((item) => normalizeSubmission(item, deviceId.current));
-          if (JSON.stringify(normalized) !== JSON.stringify(stored)) {
-            await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(normalized));
-          }
-          return normalized;
+          return readFeedbackQueue(AsyncStorage, deviceId.current, createSubmissionId);
         });
         setOfflineQueue(queue);
         if (queue.length === 0) {
@@ -1141,64 +1090,28 @@ export default function MessMateScreen() {
           break;
         }
         const pending = queue[0];
-        let delivery: Submission['delivery'] = 'delivered';
-        try {
-          const receipt = await submitFeedback({
-            clientSubmissionId: pending.clientSubmissionId,
-            deviceId: pending.deviceId,
-            mealDate: pending.mealDate,
-            meal: pending.meal,
-            items: pending.items,
-            rating: pending.rating,
-            tags: pending.tags,
-            comment: pending.comment,
-            createdAt: pending.createdAt,
-          });
-          if (receipt.clientSubmissionId !== pending.clientSubmissionId) throw new Error('Mismatched receipt');
-        } catch (error) {
-          if (error && typeof error === 'object' && 'status' in error && error.status === 409) {
-            delivery = 'rejected';
-          } else {
-            failedRequest = error;
-            const failedSubmissions = await withQueueStorageLock(async () => {
-              const stored: unknown = JSON.parse((await AsyncStorage.getItem(SUBMISSIONS_KEY)) ?? '[]');
-              if (!Array.isArray(stored)) throw new Error('Saved feedback is invalid.');
-              const updated = stored.map((item) => {
-                const submission = normalizeSubmission(item, deviceId.current);
-                return submission.clientSubmissionId === pending.clientSubmissionId
-                  ? { ...submission, delivery: 'failed' as const } : submission;
-              });
-              await AsyncStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(updated));
-              return updated;
-            });
-            setSubmissions(failedSubmissions);
-            setDeliveryError(true);
-            break;
-          }
+        const result = await deliverFeedback(
+          AsyncStorage, pending, deviceId.current, createSubmissionId,
+          (item) => submitFeedback({
+            clientSubmissionId: item.clientSubmissionId,
+            deviceId: item.deviceId,
+            mealDate: item.mealDate,
+            meal: item.meal,
+            items: item.items,
+            rating: item.rating,
+            tags: item.tags,
+            comment: item.comment,
+            createdAt: item.createdAt,
+          }),
+          withQueueStorageLock,
+        );
+        setOfflineQueue(result.queue);
+        setSubmissions(result.submissions);
+        if (result.error) {
+          failedRequest = result.error;
+          setDeliveryError(true);
+          break;
         }
-        const { remainingQueue, updatedSubmissions } = await withQueueStorageLock(async () => {
-          const stored: unknown = JSON.parse((await AsyncStorage.getItem(OFFLINE_QUEUE_KEY)) ?? '[]');
-          const latestQueue = Array.isArray(stored)
-            ? (stored as unknown[]).map((item) => normalizeSubmission(item, deviceId.current))
-            : [];
-          const remaining = latestQueue.filter(
-            (item) => item.clientSubmissionId !== pending.clientSubmissionId,
-          );
-          const saved: unknown = JSON.parse((await AsyncStorage.getItem(SUBMISSIONS_KEY)) ?? '[]');
-          if (!Array.isArray(saved)) throw new Error('Saved feedback is invalid.');
-          const updated = saved.map((item) => {
-            const submission = normalizeSubmission(item, deviceId.current);
-            return submission.clientSubmissionId === pending.clientSubmissionId
-              ? { ...submission, delivery } : submission;
-          });
-          await AsyncStorage.multiSet([
-            [SUBMISSIONS_KEY, JSON.stringify(updated)],
-            [OFFLINE_QUEUE_KEY, JSON.stringify(remaining)],
-          ]);
-          return { remainingQueue: remaining, updatedSubmissions: updated };
-        });
-        setOfflineQueue(remainingQueue);
-        setSubmissions(updatedSubmissions);
         setDeliveryError(false);
         retryAttempt.current = 0;
       }
@@ -1521,27 +1434,19 @@ export default function MessMateScreen() {
         setSaveError('Please select at least one menu item before submitting feedback.');
         return;
       }
-      const nextSubmissions = [...submissions, submission];
-      const nextQueue = await withQueueStorageLock(async () => {
-        const storedQueue: unknown = JSON.parse((await AsyncStorage.getItem(OFFLINE_QUEUE_KEY)) ?? '[]');
-        if (!Array.isArray(storedQueue)) throw new Error('Saved feedback queue is invalid.');
-        const currentQueue = (storedQueue as unknown[])
-          .map((item) => normalizeSubmission(item, deviceId.current));
-        const appendedQueue = [...currentQueue, submission];
-        await AsyncStorage.multiSet([
-          [SUBMISSIONS_KEY, JSON.stringify(nextSubmissions)],
-          [OFFLINE_QUEUE_KEY, JSON.stringify(appendedQueue)],
-        ]);
-        return appendedQueue;
-      });
-      setSubmissions(nextSubmissions);
-      setOfflineQueue(nextQueue);
+      const saved = await withQueueStorageLock(() =>
+        saveFeedback(AsyncStorage, submission, deviceId.current, createSubmissionId));
+      if (!saved) {
+        setAlreadyMeal(meal);
+        goTo('already');
+        return;
+      }
+      setSubmissions(saved.submissions);
+      setOfflineQueue(saved.queue);
       setQueuedSubmissionId(submission.clientSubmissionId);
       if (isOnline) await flushQueuedSubmissions();
-      const storedAfterSend: unknown = JSON.parse((await AsyncStorage.getItem(OFFLINE_QUEUE_KEY)) ?? '[]');
-      const remainingAfterSend = Array.isArray(storedAfterSend)
-        ? (storedAfterSend as unknown[]).map((item) => normalizeSubmission(item, deviceId.current))
-        : nextQueue;
+      const remainingAfterSend = await withQueueStorageLock(() =>
+        readFeedbackQueue(AsyncStorage, deviceId.current, createSubmissionId));
       setOfflineQueue(remainingAfterSend);
       goTo('thanks');
     } catch {
