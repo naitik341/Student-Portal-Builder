@@ -1,0 +1,61 @@
+Add a new student screen to MessMate called "Item Select", plus a Menu Manager in the manager dashboard where the items shown on this screen can be edited. The attached screenshot is the pixel reference. Match its fonts, colors, spacing and button placement exactly. Keep it flat like the screenshot: do NOT add extra shadows, gradients or borders that aren't in the image.
+
+FLOW
+Meal Select (Breakfast/Lunch/Dinner) -> ITEM SELECT (this screen) -> Face Rating -> Tags -> Thank You.
+Items shown are filtered by the meal chosen. Selected item names are saved with the feedback and passed to the AI summary, so it can say "Egg Fried Rice: too oily (12)" instead of only "too oily".
+
+THEME TOKENS (set globally so other screens can reuse them)
+- Background: #F1ECEC (sample exact hex from the screenshot if you can)
+- Orange: #F06A14 (sample exact hex from screenshot)
+- Black: #000000, card fill: #FCFCFC, text on orange: #FFFFFF
+- Veg green: #118A1A, non-veg red: #D9151B
+- Fonts (Google Fonts): "Archivo Black" for all bold text, "Modak" for the word ORDER?
+
+LAYOUT (reference width 375px, use vw/rem so it scales to 360-430px)
+- Full-screen mobile layout on cream background. On desktop, center it in a max-width 430px column. Ignore the black status strip at the top of the screenshot, it's just a mockup frame.
+- Back button: black circle, 34px, top 29px, left 13px, white thin chevron "<" icon. Goes back to Meal Select.
+- Heading line 1: "WHAT DID YOU" in Archivo Black, black, uppercase, ~34px cap height, left aligned at 13px margin, top ~98px. Should span about 86% of screen width.
+- Heading line 2: "ORDER?" in Modak, orange fill with a thick black outline (-webkit-text-stroke ~6px, paint-order: stroke fill), ~65px tall, sits directly under line 1, spans about 88% of width. Match the screenshot's look closely.
+- Item grid: 2 columns, starts at ~237px from top, side margins 13px, column gap 17px, row gap 14px.
+- Item card: ~159px wide x 168px tall, white (#FCFCFC), 3px solid black border, ~18px radius.
+  - Top part: an orange rectangle tilted about -12deg behind a transparent-background food photo. The food image is centered on the rectangle and slightly overflows it at the top.
+  - Veg/non-veg mark: 18px square with 3px border and a centered dot (green for veg, red for non-veg). Placed right-aligned, 9px from the card's right edge, just above the item name.
+  - Item name: Archivo Black, black, uppercase, RIGHT-aligned with ~10px right inset (lines up with the veg mark). Single line. Auto-fit the font size (max 25px, min 15px) so long names like "CHOLE PLATTER" shrink to fit, like in the screenshot.
+  - SELECT pill: orange (#F06A14), no border, white Archivo Black text ~18px, 76 x 34px, fully rounded. It overlaps the card's bottom-right corner: positioned right -8px, bottom -3px so it pokes outside the card border, exactly as in the screenshot.
+- PROCEED button: full-width pill (13px side margins), ~61px tall, orange, white Archivo Black ~36px text "PROCEED". Fixed to the bottom of the screen with a cream fade behind it. The grid scrolls if there are more than 4 items. When items are selected, the label becomes "PROCEED (2)".
+
+INTERACTIONS (make everything feel clicky, Framer Motion springs)
+- Every button (back, SELECT, PROCEED, cards): on press scale to 0.93 and darken orange to #D9570A, on release spring back with a small overshoot (stiffness ~500, damping ~15). Also navigator.vibrate(8) where supported and a tiny soft click sound via WebAudio (add a small mute icon in the header, default muted).
+- Tapping a card OR its SELECT pill toggles selection (multi-select).
+  - Selected state: SELECT pill morphs to black with white "SELECTED" and a checkmark that pops in. Card does a quick wiggle (rotate -1.5deg to 1.5deg to 0), the food image scales to 1.08 and tilts 3deg, and the orange rectangle rotates a few degrees. Card gets a soft orange glow ring.
+  - Tap again to deselect and animate back.
+- Page load: heading words slide up one by one, then "ORDER?" pops in with an overshoot and slight rotation settle. Cards stagger in from below with a spring.
+- PROCEED with nothing selected: the button shakes, cards do a quick pulse, and a toast says "Pick at least one item". With selection: slide-left transition to the Rating screen.
+- Screen transitions use AnimatePresence. Respect prefers-reduced-motion.
+
+MANAGER: MENU MANAGER (route /manager/menu, add an "Edit Menu" button in the dashboard header)
+Style it with the same theme (cream background, orange pills, black outlines, Archivo Black headings) so the whole app feels like one brand.
+- Meal tabs at top: All | Breakfast | Lunch | Dinner with an animated sliding underline.
+- Grid of the exact same item cards used on the student screen, so the manager sees a true preview. A small pencil badge on each card. Tap a card to open an edit bottom sheet (modal on desktop).
+- Drag to reorder cards (Framer Motion Reorder), order saves automatically and controls the student screen order.
+- Big orange "+ ADD ITEM" pill button, fixed at the bottom.
+- Edit sheet fields:
+  - Item name (max 20 chars, live counter)
+  - Image upload: drag-and-drop or tap, live preview on the tilted orange rectangle. Accept PNG/WebP/JPG. Tip text: "Use a transparent PNG for the pop-out look". Resize client-side to max 600px wide (webp) and store as a data URL in the database, so images survive Replit redeploys.
+  - Veg / Non-veg toggle showing the green or red mark
+  - "Show in" chips: Breakfast, Lunch, Dinner (multi-select, an item can appear in several meals)
+  - Active switch (hidden items don't appear to students)
+  - Save (orange), Delete (with confirm and an Undo toast)
+- Small "Screen text" section: editable heading line 1 and line 2 (defaults "WHAT DID YOU" and "ORDER?").
+- On desktop, show a live phone-frame preview of the student Item Select screen on the right that updates as the manager edits.
+- All buttons here use the same clicky press behavior.
+
+BACKEND
+- Table menu_items(id, name, image_data, is_veg, meals JSON, sort_order, active)
+- Table settings(heading_line1, heading_line2)
+- Add items JSON column to feedback table
+- Endpoints: GET /api/menu?meal=, POST /api/menu, PUT /api/menu/:id, DELETE /api/menu/:id, POST /api/menu/reorder, GET/PUT /api/settings
+- Seed 4 items on first run, all shown in Lunch and Dinner: Veg Combo (veg), Chole Platter (veg), Egg Fried Rice (non-veg), Normal Roll (veg). Use emoji placeholders (🍔 🍛 🍚 🌯) on the orange rectangle until real images are uploaded.
+- Update the /api/summary Claude prompt so tag counts are grouped by item name.
+
+Build the student Item Select screen first and compare it to the screenshot until spacing, fonts and colors match. Then build the Menu Manager.
