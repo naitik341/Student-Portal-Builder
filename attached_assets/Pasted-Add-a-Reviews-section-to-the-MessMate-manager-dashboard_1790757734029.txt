@@ -1,0 +1,56 @@
+Add a "Reviews" section to the MessMate manager dashboard: an Overall Review at the top, an AI bot (MessBot) directly under it, and a full list of every review below. Reuse the existing theme (cream #F1ECEC background, orange #F06A14, black 3px outlines, Archivo Black headings, Modak for the big title). Every button uses the same clicky press behavior as the rest of the app (scale 0.93, spring back, vibrate).
+
+ROUTE: /manager/reviews (add a "Reviews" button in the dashboard header next to "Edit Menu")
+
+LAYOUT (single scrollable page, top to bottom)
+
+1) HEADER
+- Back circle button, title "REVIEWS" (Archivo Black, black, with "REVIEWS" in Modak orange + black outline like the ORDER? heading).
+- Filter row of pills: Period (Today | 7 Days | 30 Days | All), Meal (All | Breakfast | Lunch | Dinner), Item (dropdown from menu items). Selected pill = black with white text, others = white with black outline. Animated sliding highlight. All sections below update when filters change.
+
+2) OVERALL REVIEW CARD (white card, 3px black border, 18px radius)
+- Big average score out of 5 with count-up animation, inside a ring colored by score (red < 3, amber 3-4, green > 4).
+- The 5 rating faces (same style as student side, small, read-only) with horizontal bars showing the count and percentage for each rating 1-5. Bars grow from 0 on load.
+- Total reviews count and trend vs previous period ("+0.3 vs last week", green up or red down arrow).
+- Mini row of 3 meal scores (Breakfast, Lunch, Dinner) as small cards. Tapping one applies the Meal filter.
+- "Best rated item" and "Needs attention item" chips computed from the data (item with highest and lowest average).
+- Top 5 tags as chips with counts (red chips for complaints, green for praise). Tapping a tag filters the review list below to that tag.
+
+3) MESSBOT CARD (directly under the overall card, this is the hero)
+- Orange card with black outline and a cute robot avatar (Lucide Bot icon in a black circle) on the left. Title "MessBot says" in Archivo Black.
+- Auto-generates when the page loads and whenever filters change (debounced, cached per filter combo so it doesn't call the API repeatedly). While loading: shimmer skeleton plus rotating text ("Reading 143 reviews...", "Spotting patterns...", "Writing your summary...").
+- Output appears with a typewriter effect, in this structure, under 100 words total:
+  - VERDICT: one plain sentence with a mood emoji (e.g. "Overall a decent week, but lunch dal is dragging the score down. 😕")
+  - 🔴 FIX THESE: top 3 issues, each with count, the item name, and one clear action ("Dal too salty (41). Cut salt in lunch dal.")
+  - 🟢 KEEP DOING: 1-2 things students loved
+  - 📈 TREND: one line comparing to the previous period
+- Buttons under the output: "Regenerate", "Copy", "Share on WhatsApp" (wa.me link with the text prefilled).
+- "ASK MESSBOT" mini-chat below the summary: 4 quick-question chips ("Why is lunch rated low?", "What do students like most?", "Any hygiene complaints?", "What should I fix first?") plus a text input. Tapping a chip or sending a question sends it to the AI with the currently filtered reviews as context. Answers appear as chat bubbles with a typing-dots animation. Keep answers under 60 words. Chat is session-only, not saved.
+- If ANTHROPIC_API_KEY is missing or the call fails, fall back to a rule-based summary built from the stats so the card never shows an error. Show a small "Basic summary (AI offline)" label in that case.
+
+4) ALL REVIEWS LIST
+- Heading "ALL REVIEWS (143)" with a search box (searches comment text, tags and item names) and a sort dropdown: Newest | Oldest | Lowest rating | Highest rating.
+- Quick filter pills: All | With comments | Complaints only | Praise only.
+- Each review is a white card with black outline: the rating face (small static emoji-style face matching the rating), meal pill (yellow, orange or indigo), item names, tag chips, the comment text (expand "Read more" if longer than 3 lines), and time ago. Reviews are anonymous, never show a device ID.
+- Cards stagger in. Load 20 at a time with a "LOAD MORE" orange pill button (or infinite scroll).
+- Tap a card to open a detail sheet showing the full review with date/time.
+- Manager actions in the sheet: "Mark as resolved" (moves the card to a subtle greyed style with a check) and "Flag as spam" (hides it from stats). Both persist.
+- Friendly empty state with an illustration when no reviews match the filters ("No reviews here yet").
+- Skeleton loaders while fetching.
+
+BACKEND
+- GET /api/reviews?period=&meal=&item=&tag=&q=&sort=&filter=&page=&limit= returns paginated reviews plus total count.
+- GET /api/reviews/overview?period=&meal=&item= returns average, rating distribution, per-meal averages, per-item averages, top tags, trend vs previous period, best and worst item.
+- POST /api/reviews/bot-summary with the same filters. Cached per filter combo for 10 minutes.
+- POST /api/reviews/ask with { question, filters }.
+- PATCH /api/reviews/:id with { resolved?, spam? }. Add resolved and spam boolean columns to the feedback table. Exclude spam from all stats.
+
+CLAUDE PROMPTS (send aggregated stats plus up to 60 sampled comments, never the whole database)
+Summary system prompt: "You are MessBot, an assistant for a hostel mess manager who has under 2 minutes. Using the review data provided, return JSON: { verdict: string, fix: [{issue, item, count, action}] (max 3, most severe first), good: [string] (max 2), trend: string }. Be specific and plain, no fluff, under 100 words total. Merge similar complaints (e.g. 'salty' and 'too much salt')."
+Ask system prompt: "You are MessBot. Answer the manager's question using ONLY the review data provided. If the data doesn't answer it, say so. Max 60 words, plain English."
+Parse JSON safely and render into the cards.
+
+SEED DATA
+Make sure the existing ~250 seeded reviews include item names, and about 40% have comments (mix of short and longer ones, some in Hinglish like "dal me namak bahut zyada tha"). Include a few very low and very high reviews so the filters look interesting in the demo.
+
+Build the Overall Review card and All Reviews list first, then add MessBot, then the Ask MessBot chat.
