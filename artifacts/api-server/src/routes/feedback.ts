@@ -1,9 +1,10 @@
 import { Router, type IRouter } from "express";
 import { db, feedback } from "@workspace/db";
-import { and, count, desc, eq, isNotNull } from "drizzle-orm";
+import { and, count, desc, eq, isNotNull, lt, or } from "drizzle-orm";
 import { ListDeliveredFeedbackResponse, ListFeedbackDatesResponse, SubmitFeedbackBody, SubmitFeedbackResponse } from "@workspace/api-zod";
 import type { RequestHandler } from "express";
 import { requireManager } from "../middlewares/managerAuth";
+import { decodeFeedbackCursor, encodeFeedbackCursor } from "./feedbackCursor";
 
 const router: IRouter = Router();
 const feedbackLimitWindowMs = 60_000;
@@ -67,29 +68,51 @@ router.get("/feedback/manage/dates", requireManager, async (req, res, next): Pro
 });
 
 router.get("/feedback/manage", requireManager, async (req, res, next) => {
-  const { date, meal } = req.query;
+  const { date, meal, cursor } = req.query;
   if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
       Number.isNaN(Date.parse(`${date}T00:00:00Z`)) ||
       new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) !== date ||
-      (meal !== "Breakfast" && meal !== "Lunch" && meal !== "Dinner")) {
+      (meal !== "Breakfast" && meal !== "Lunch" && meal !== "Dinner") ||
+      (cursor !== undefined && (typeof cursor !== "string" || !cursor))) {
     res.status(400).json({ error: "Invalid date or meal" });
     return;
   }
 
   try {
+    const position = cursor ? decodeFeedbackCursor(cursor, date, meal) : null;
+    if (cursor && !position) {
+      res.status(400).json({ error: "Invalid feedback cursor" });
+      return;
+    }
     const rows = await db.select({
+      id: feedback.id,
       items: feedback.items,
       rating: feedback.rating,
       tags: feedback.tags,
       comment: feedback.comment,
       createdAt: feedback.createdAt,
     }).from(feedback)
-      .where(and(eq(feedback.mealDate, date), eq(feedback.meal, meal)))
-      .orderBy(desc(feedback.createdAt), desc(feedback.id));
-    res.json(ListDeliveredFeedbackResponse.parse(rows.map((row) => ({
-      ...row,
-      createdAt: row.createdAt.toISOString(),
-    }))));
+      .where(and(
+        eq(feedback.mealDate, date),
+        eq(feedback.meal, meal),
+        position ? or(
+          lt(feedback.createdAt, position.createdAt),
+          and(eq(feedback.createdAt, position.createdAt), lt(feedback.id, position.id)),
+        ) : undefined,
+      ))
+      .orderBy(desc(feedback.createdAt), desc(feedback.id))
+      .limit(26);
+    const page = rows.slice(0, 25);
+    const last = page.at(-1);
+    res.json(ListDeliveredFeedbackResponse.parse({
+      items: page.map(({ id: _id, ...row }) => ({
+        ...row,
+        createdAt: row.createdAt.toISOString(),
+      })),
+      nextCursor: rows.length > 25 && last ? encodeFeedbackCursor({
+        date, meal, createdAt: last.createdAt.toISOString(), id: last.id,
+      }) : null,
+    }));
   } catch (error) {
     next(error);
   }

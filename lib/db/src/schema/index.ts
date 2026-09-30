@@ -2,6 +2,7 @@ import {
   boolean,
   date,
   integer,
+  index,
   jsonb,
   pgTable,
   serial,
@@ -45,4 +46,5 @@ export const feedback = pgTable("feedback", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
 }, (table) => [
   uniqueIndex("feedback_device_meal_day_unique").on(table.deviceId, table.meal, table.mealDate),
+  index("feedback_manage_page_idx").on(table.mealDate, table.meal, table.createdAt.desc(), table.id.desc()),
 ]);

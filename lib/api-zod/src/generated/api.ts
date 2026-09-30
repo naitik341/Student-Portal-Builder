@@ -241,17 +241,20 @@ export const SubmitFeedbackResponse = zod.object({
  */
 export const ListDeliveredFeedbackQueryParams = zod.object({
   "date": zod.date(),
-  "meal": zod.enum(['Breakfast', 'Lunch', 'Dinner'])
+  "meal": zod.enum(['Breakfast', 'Lunch', 'Dinner']),
+  "cursor": zod.coerce.string().optional().describe('Opaque continuation token returned by the previous page for this date and meal')
 })
 
-export const ListDeliveredFeedbackResponseItem = zod.object({
+export const ListDeliveredFeedbackResponse = zod.object({
+  "items": zod.array(zod.object({
   "items": zod.array(zod.string()),
   "rating": zod.number().int(),
   "tags": zod.array(zod.string()),
   "comment": zod.string(),
   "createdAt": zod.coerce.date()
+})),
+  "nextCursor": zod.string().nullable().describe('Opaque continuation token; null means no more responses')
 })
-export const ListDeliveredFeedbackResponse = zod.array(ListDeliveredFeedbackResponseItem)
 
 
 /**

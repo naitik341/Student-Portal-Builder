@@ -15,6 +15,13 @@
       "when": 1790758361472,
       "tag": "0001_careless_solo",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790759111507,
+      "tag": "0002_clumsy_marrow",
+      "breakpoints": true
     }
   ]
 }

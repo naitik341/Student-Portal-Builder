@@ -2,3 +2,4 @@
 - [Anonymous feedback identity](anonymous-feedback-identity.md) — daily duplicate prevention is per installation, not per person across devices.
 - [Feedback schema migrations](feedback-schema-migrations.md) — keep checked-in migrations aligned with Drizzle schema even if the dev database was already pushed ahead.
 - [Date-only API responses](date-only-api-responses.md) — avoid generated date coercion when callers need exact YYYY-MM-DD strings.
+- [Private feedback pagination](private-feedback-pagination.md) — keep staff continuation tokens opaque while preserving deterministic ordering on tied timestamps.

@@ -115,6 +115,15 @@ export interface DeliveredFeedback {
   createdAt: string;
 }
 
+export interface DeliveredFeedbackPage {
+  items: DeliveredFeedback[];
+  /**
+     * Opaque continuation token; null means no more responses
+     * @nullable
+     */
+  nextCursor: string | null;
+}
+
 export interface FeedbackDateCount {
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   date: string;
@@ -173,6 +182,10 @@ meal?: Meal;
 export type ListDeliveredFeedbackParams = {
 date: string;
 meal: Meal;
+/**
+ * Opaque continuation token returned by the previous page for this date and meal
+ */
+cursor?: string;
 };
 
 export type ListFeedbackDatesParams = {

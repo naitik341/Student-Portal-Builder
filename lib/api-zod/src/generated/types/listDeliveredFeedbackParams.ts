@@ -10,4 +10,8 @@ import type { Meal } from './meal';
 export type ListDeliveredFeedbackParams = {
 date: Date;
 meal: Meal;
+/**
+ * Opaque continuation token returned by the previous page for this date and meal
+ */
+cursor?: string;
 };

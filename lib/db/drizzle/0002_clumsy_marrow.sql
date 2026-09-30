@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS "feedback_manage_page_idx" ON "feedback" USING btree ("meal_date","meal","created_at" DESC NULLS LAST,"id" DESC NULLS LAST);

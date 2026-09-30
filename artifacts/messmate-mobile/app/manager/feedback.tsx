@@ -5,6 +5,7 @@ import { Link } from 'expo-router';
 import { useAuth } from '@clerk/expo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getListDeliveredFeedbackQueryKey, getListFeedbackDatesQueryKey, useListDeliveredFeedback, useListFeedbackDates } from '@workspace/api-client-react';
+import type { DeliveredFeedback } from '@workspace/api-client-react';
 import { useColors } from '@/hooks/useColors';
 
 const MEALS = ['Breakfast', 'Lunch', 'Dinner'] as const;
@@ -27,6 +28,101 @@ function statusOf(error: unknown) {
     ? Number((error as { status?: unknown }).status) : 0;
 }
 
+function FeedbackResults({ date, meal, userId, colors }: {
+  date: string; meal: Meal; userId: string | null | undefined; colors: ReturnType<typeof useColors>;
+}) {
+  const [cursor, setCursor] = useState<string | undefined>();
+  const [loaded, setLoaded] = useState<DeliveredFeedback[]>([]);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const params = { date, meal, cursor };
+  const query = useListDeliveredFeedback(params, {
+    query: {
+      enabled: !!userId,
+      queryKey: [...getListDeliveredFeedbackQueryKey(params), userId, refreshVersion],
+      staleTime: 0,
+      refetchOnMount: 'always',
+    },
+  });
+  const entries = [...loaded, ...(query.data?.items ?? [])];
+  const refresh = () => {
+    setLoaded([]);
+    setCursor(undefined);
+    setRefreshVersion(value => value + 1);
+  };
+  const loadMore = () => {
+    if (!query.data?.nextCursor || query.isFetching) return;
+    setLoaded(entries);
+    setCursor(query.data.nextCursor);
+  };
+  const errorStatus = statusOf(query.error);
+  const errorText = errorStatus === 403
+    ? 'This account is not authorized to view student feedback. Ask an administrator to add your verified email to MANAGER_EMAILS.'
+    : errorStatus === 401
+      ? 'Your session has expired. Sign in again to view feedback.'
+      : 'Feedback could not be loaded. Check your connection and try again.';
+
+  if (query.isPending && !loaded.length) return (
+    <View style={styles.state}><ActivityIndicator color={colors.primary} /><Text style={[styles.stateText, { color: colors.mutedForeground }]}>Loading delivered feedback…</Text></View>
+  );
+  if (query.isError && !loaded.length) return (
+    <View style={styles.state} testID="feedback-load-error">
+      <Ionicons name="alert-circle-outline" size={28} color={colors.destructive} />
+      <Text accessibilityRole="alert" style={[styles.stateText, { color: colors.destructive }]}>{errorText}</Text>
+      <Pressable accessibilityRole="button" onPress={() => void query.refetch()} style={[styles.retry, { backgroundColor: colors.primary }]}>
+        <Text style={[styles.retryText, { color: colors.primaryForeground }]}>RETRY</Text>
+      </Pressable>
+    </View>
+  );
+  if (!entries.length && !query.isFetching) return (
+    <View style={styles.state} testID="feedback-empty">
+      <Ionicons name="chatbox-ellipses-outline" size={32} color={colors.primary} />
+      <Text style={[styles.stateText, { color: colors.mutedForeground }]}>No delivered feedback for {meal.toLowerCase()} on this date.</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Refresh feedback" onPress={refresh} style={[styles.retry, { backgroundColor: colors.primary }]}>
+        <Text style={[styles.retryText, { color: colors.primaryForeground }]}>REFRESH</Text>
+      </Pressable>
+    </View>
+  );
+  return (
+    <View testID="feedback-results" style={styles.results}>
+      <View style={styles.resultsHeader}>
+        <Text style={[styles.count, { color: colors.mutedForeground }]}>{entries.length} {entries.length === 1 ? 'RESPONSE' : 'RESPONSES'} LOADED{query.isFetching && !cursor ? ' · UPDATING' : ''}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="Refresh feedback" onPress={refresh}>
+          <Ionicons name="refresh" size={21} color={colors.primary} />
+        </Pressable>
+      </View>
+      {entries.map((entry, index) => (
+        <View key={`${entry.createdAt}-${index}`} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.cardHeader}>
+            <Text accessibilityLabel={`${entry.rating} out of 5 stars`} style={[styles.rating, { color: colors.primary }]}>{'★'.repeat(entry.rating)}{'☆'.repeat(5 - entry.rating)}</Text>
+            <Text style={[styles.time, { color: colors.mutedForeground }]}>{new Date(entry.createdAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</Text>
+          </View>
+          <Text style={[styles.items, { color: colors.foreground }]}>{entry.items.join(', ')}</Text>
+          {entry.tags.length > 0 && <View style={styles.tags}>{entry.tags.map((tag, tagIndex) => (
+            <View key={`${tag}-${tagIndex}`} style={[styles.tag, { backgroundColor: colors.secondary }]}>
+              <Text style={[styles.tagText, { color: colors.secondaryForeground }]}>{tag}</Text>
+            </View>
+          ))}</View>}
+          {!!entry.comment && <Text style={[styles.comment, { color: colors.foreground }]}>{entry.comment}</Text>}
+        </View>
+      ))}
+      {query.isError ? (
+        <View style={styles.pageState}>
+          <Text accessibilityRole="alert" style={{ color: colors.destructive }}>Could not load more feedback. {errorText}</Text>
+          <Pressable testID="feedback-load-more-retry" accessibilityRole="button" onPress={() => void query.refetch()}>
+            <Text style={{ color: colors.primary }}>RETRY</Text>
+          </Pressable>
+        </View>
+      ) : query.isFetching && cursor ? (
+        <ActivityIndicator color={colors.primary} />
+      ) : query.data?.nextCursor ? (
+        <Pressable testID="feedback-load-more" accessibilityRole="button" onPress={loadMore} style={[styles.retry, styles.loadMore, { backgroundColor: colors.primary }]}>
+          <Text style={[styles.retryText, { color: colors.primaryForeground }]}>LOAD MORE</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
 export default function ManagerFeedback() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -34,15 +130,6 @@ export default function ManagerFeedback() {
   const [date, setDate] = useState(() => localDate(new Date()));
   const [meal, setMeal] = useState<Meal>('Breakfast');
   const [showDates, setShowDates] = useState(false);
-  const params = { date, meal };
-  const query = useListDeliveredFeedback(params, {
-    query: {
-      enabled: !!userId,
-      queryKey: [...getListDeliveredFeedbackQueryKey(params), userId],
-      staleTime: 0,
-      refetchOnMount: 'always',
-    },
-  });
   const datesQuery = useListFeedbackDates({ meal }, {
     query: {
       enabled: !!userId,
@@ -51,13 +138,6 @@ export default function ManagerFeedback() {
       refetchOnMount: 'always',
     },
   });
-
-  const errorStatus = statusOf(query.error);
-  const errorText = errorStatus === 403
-    ? 'This account is not authorized to view student feedback. Ask an administrator to add your verified email to MANAGER_EMAILS.'
-    : errorStatus === 401
-      ? 'Your session has expired. Sign in again to view feedback.'
-      : 'Feedback could not be loaded. Check your connection and try again.';
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]} testID="manager-feedback-screen">
@@ -147,49 +227,7 @@ export default function ManagerFeedback() {
           </View>
         )}
 
-        {query.isPending || query.isFetching && !query.data ? (
-          <View style={styles.state}><ActivityIndicator color={colors.primary} /><Text style={[styles.stateText, { color: colors.mutedForeground }]}>Loading delivered feedback…</Text></View>
-        ) : query.isError ? (
-          <View style={styles.state} testID="feedback-load-error">
-            <Ionicons name="alert-circle-outline" size={28} color={colors.destructive} />
-            <Text accessibilityRole="alert" style={[styles.stateText, { color: colors.destructive }]}>{errorText}</Text>
-            <Pressable accessibilityRole="button" onPress={() => void query.refetch()} style={[styles.retry, { backgroundColor: colors.primary }]}>
-              <Text style={[styles.retryText, { color: colors.primaryForeground }]}>RETRY</Text>
-            </Pressable>
-          </View>
-        ) : !query.data?.length ? (
-          <View style={styles.state} testID="feedback-empty">
-            <Ionicons name="chatbox-ellipses-outline" size={32} color={colors.primary} />
-            <Text style={[styles.stateText, { color: colors.mutedForeground }]}>No delivered feedback for {meal.toLowerCase()} on this date.</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel="Refresh feedback" onPress={() => void query.refetch()} style={[styles.retry, { backgroundColor: colors.primary }]}>
-              <Text style={[styles.retryText, { color: colors.primaryForeground }]}>REFRESH</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <View testID="feedback-results" style={styles.results}>
-            <View style={styles.resultsHeader}>
-              <Text style={[styles.count, { color: colors.mutedForeground }]}>{query.data.length} {query.data.length === 1 ? 'RESPONSE' : 'RESPONSES'}{query.isFetching ? ' · UPDATING' : ''}</Text>
-              <Pressable accessibilityRole="button" accessibilityLabel="Refresh feedback" onPress={() => void query.refetch()}>
-                <Ionicons name="refresh" size={21} color={colors.primary} />
-              </Pressable>
-            </View>
-            {query.data.map((entry, index) => (
-              <View key={`${entry.createdAt}-${index}`} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <View style={styles.cardHeader}>
-                  <Text accessibilityLabel={`${entry.rating} out of 5 stars`} style={[styles.rating, { color: colors.primary }]}>{'★'.repeat(entry.rating)}{'☆'.repeat(5 - entry.rating)}</Text>
-                  <Text style={[styles.time, { color: colors.mutedForeground }]}>{new Date(entry.createdAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</Text>
-                </View>
-                <Text style={[styles.items, { color: colors.foreground }]}>{entry.items.join(', ')}</Text>
-                {entry.tags.length > 0 && <View style={styles.tags}>{entry.tags.map((tag, tagIndex) => (
-                  <View key={`${tag}-${tagIndex}`} style={[styles.tag, { backgroundColor: colors.secondary }]}>
-                    <Text style={[styles.tagText, { color: colors.secondaryForeground }]}>{tag}</Text>
-                  </View>
-                ))}</View>}
-                {!!entry.comment && <Text style={[styles.comment, { color: colors.foreground }]}>{entry.comment}</Text>}
-              </View>
-            ))}
-          </View>
-        )}
+        <FeedbackResults key={`${userId}-${date}-${meal}`} date={date} meal={meal} userId={userId} colors={colors} />
       </ScrollView>
     </View>
   );
@@ -224,6 +262,8 @@ const styles = StyleSheet.create({
   retry: { minHeight: 42, paddingHorizontal: 25, borderRadius: 12, justifyContent: 'center' },
   retryText: { fontFamily: BOLD, fontSize: 12 },
   results: { gap: 12, marginTop: 10 },
+  pageState: { alignItems: 'center', gap: 10, padding: 16 },
+  loadMore: { alignSelf: 'center', marginTop: 6 },
   resultsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   count: { fontFamily: BOLD, fontSize: 10, letterSpacing: 1 },
   card: { borderWidth: 1.5, borderRadius: 18, padding: 17, gap: 10 },

@@ -8,7 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:feedback": "node --test tests/feedback.test.mjs"
+    "test:feedback": "node --test tests/feedback.test.mjs tests/feedbackCursor.test.mjs"
   },
   "dependencies": {
     "@clerk/express": "^1.7.0",

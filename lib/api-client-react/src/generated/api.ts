@@ -21,7 +21,7 @@ import type {
 
 import type {
   BadRequestResponse,
-  DeliveredFeedback,
+  DeliveredFeedbackPage,
   Error,
   FeedbackDateCount,
   FeedbackReceipt,
@@ -926,9 +926,9 @@ export const getListDeliveredFeedbackUrl = (params: ListDeliveredFeedbackParams,
 /**
  * @summary List delivered student feedback for a date and meal (manager only)
  */
-export const listDeliveredFeedback = async (params: ListDeliveredFeedbackParams, options?: Parameters<typeof customFetch>[1]): Promise<DeliveredFeedback[]> => {
+export const listDeliveredFeedback = async (params: ListDeliveredFeedbackParams, options?: Parameters<typeof customFetch>[1]): Promise<DeliveredFeedbackPage> => {
 
-  return customFetch<DeliveredFeedback[]>(getListDeliveredFeedbackUrl(params),
+  return customFetch<DeliveredFeedbackPage>(getListDeliveredFeedbackUrl(params),
   {
     ...options,
     method: 'GET'

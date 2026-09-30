@@ -8,6 +8,7 @@
 
 export * from './badRequestResponse';
 export * from './deliveredFeedback';
+export * from './deliveredFeedbackPage';
 export * from './error';
 export * from './feedbackDateCount';
 export * from './feedbackReceipt';

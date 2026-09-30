@@ -119,7 +119,7 @@ test('checked-in migrations create the feedback uniqueness rule in an empty sche
   try {
     await client.query(`CREATE SCHEMA "${schema}"`);
     await client.query(`SET search_path TO "${schema}"`);
-    for (const filename of ['0000_useful_layla_miller.sql', '0001_careless_solo.sql']) {
+    for (const filename of ['0000_useful_layla_miller.sql', '0001_careless_solo.sql', '0002_clumsy_marrow.sql']) {
       const sql = await readFile(new URL(`../../../lib/db/drizzle/${filename}`, import.meta.url), 'utf8');
       await client.query(sql.replaceAll('--> statement-breakpoint', ''));
     }
@@ -134,6 +134,10 @@ test('checked-in migrations create the feedback uniqueness rule in an empty sche
     assert.equal((await insert(first)).rowCount, 1);
     assert.equal((await insert(second)).rowCount, 0);
     assert.equal((await client.query('SELECT count(*)::integer AS total FROM feedback')).rows[0].total, 1);
+    assert.equal((await client.query(
+      "SELECT count(*)::integer AS total FROM pg_indexes WHERE schemaname = $1 AND indexname = 'feedback_manage_page_idx'",
+      [schema],
+    )).rows[0].total, 1);
   } finally {
     await client.query('SET search_path TO public');
     await client.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);

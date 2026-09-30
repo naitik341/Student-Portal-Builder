@@ -289,15 +289,18 @@ paths:
           required: true
           schema:
             $ref: "#/components/schemas/Meal"
+        - name: cursor
+          in: query
+          description: Opaque continuation token returned by the previous page for this date and meal
+          schema:
+            type: string
       responses:
         "200":
-          description: Delivered feedback, newest first; contains no student or device identifiers
+          description: Up to 25 delivered responses, newest first; contains no student, device, or submission identifiers
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/DeliveredFeedback"
+                $ref: "#/components/schemas/DeliveredFeedbackPage"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -555,6 +558,17 @@ components:
           type: string
           format: date-time
       required: [items, rating, tags, comment, createdAt]
+    DeliveredFeedbackPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeliveredFeedback"
+        nextCursor:
+          type: ["string", "null"]
+          description: Opaque continuation token; null means no more responses
+      required: [items, nextCursor]
     FeedbackDateCount:
       type: object
       properties:
