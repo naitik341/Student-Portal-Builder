@@ -1,0 +1,73 @@
+Build ONLY the student side of a mobile-first web app called "MessMate" (hostel mess feedback). No backend yet: use local React state and mock data. Stack: React + Vite + Tailwind + Framer Motion + canvas-confetti + Lucide icons.
+
+GOAL
+Student leaves feedback in under 10 seconds, one-handed, almost no typing. One screen at a time, no scrolling on the main steps, slim progress bar at the top, steps slide left/right with a spring transition (AnimatePresence).
+
+DESIGN SYSTEM
+- Background #FFF8F0, primary orange #FF7A1A, green #22C55E, red #EF4444, text dark slate. Font: Poppins.
+- Cards: rounded-3xl, soft shadows, big touch targets (min 56px).
+- Meal colors: Breakfast yellow, Lunch orange, Dinner indigo.
+- Buttons: hover lift, active scale 0.96, visible focus ring. Respect prefers-reduced-motion.
+- Header: small "MessMate" logo on the left, "Manager? Sign in" link on the right.
+
+THE RATING COMPONENT (IMPORTANT)
+Use this exact animated radio-button emoji set for the rating. Put the CSS below in src/components/FaceRating.css, unchanged, and import it.
+
+[PASTE THE FULL CSS HERE]
+
+Use this exact markup (5 options, in this order, all radios share name="rating"):
+
+<div class="feedback">
+  <label class="angry"><input type="radio" value="1" name="rating"/><div>
+    <svg class="eye left"><use xlink:href="#eye"/></svg>
+    <svg class="eye right"><use xlink:href="#eye"/></svg>
+    <svg class="mouth"><use xlink:href="#mouth"/></svg></div></label>
+  <label class="sad"> ... value="2" (same inner div) </label>
+  <label class="ok"> ... value="3" </label>
+  <label class="good"> ... value="4" </label>
+  <label class="happy"> ... value="5" </label>
+</div>
+
+Also render this hidden SVG once on the page:
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol viewBox="0 0 7 4" id="eye"><path d="M1,1 C1.83333333,2.16666667 2.66666667,2.75 3.5,2.75 C4.33333333,2.75 5.16666667,2.16666667 6,1"/></symbol>
+  <symbol viewBox="0 0 18 7" id="mouth"><path d="M1,5.5 C3.66666667,2.5 6.33333333,1 9,1 C11.6666667,1 14.3333333,2.5 17,5.5"/></symbol>
+</svg>
+
+Wrap it as a React component <FaceRating value onChange />. The faces are 40px by default, so scale the whole .feedback wrapper up (transform: scale(1.6), transform-origin center, with enough margin/gap) so they are big and easy to tap on a phone and all 5 fit in one row at 360px width. Below the faces show a label that fades in for the selected one: Terrible, Bad, Okay, Good, Loved it. Do not change the CSS animations.
+
+SCREENS
+
+Screen 1: Meal Select
+- Heading "How was your meal?"
+- Three big cards: 🍳 Breakfast, 🍛 Lunch, 🌙 Dinner. Auto-detect by time (before 11am Breakfast, 11am-4pm Lunch, after 4pm Dinner) and mark it with a "Suggested" pill and a gentle pulsing glow.
+- Tap = card scales and pulses, auto-advances after 250ms. No Next button.
+
+Screen 2: Rating
+- Heading "How was {meal} today?"
+- The FaceRating component centered in the middle of the screen.
+- After a face is selected, wait ~900ms so the face animation finishes, then auto-advance.
+- Back arrow at the top left.
+
+Screen 3: Quick Tags
+- Heading changes by rating: 1-2 "What went wrong?" (negative tags), 4-5 "What was great?" (positive tags), 3 shows both groups.
+- Negative chips: Too salty, Too oily, Too spicy, Bland, Cold food, Undercooked, Not enough quantity, Stale, Dirty plates, Long queue, Hair/insect found, Late service.
+- Positive chips: Tasty, Fresh, Hot & on time, Good quantity, Clean, Great variety, Healthy.
+- Multi-select chips: tap = pop (scale 1.1 then 1), fill with color, checkmark appears, subtle glow. Chips stagger in on load.
+- "+ Add a comment (optional)" link smoothly expands a textarea (max 200 chars, live counter).
+- Sticky bottom Submit button, enabled with zero tags. Shows live "3 selected".
+- Small note under the button: "Anonymous. Takes 10 seconds."
+
+Screen 4: Thank You
+- SVG checkmark draw animation for everyone, plus a confetti burst when rating is 4 or 5.
+- Text: "Thanks! Your feedback helps improve tomorrow's meal."
+- Fun stat: "You're one of 143 students who rated {meal} today" (count-up animation, mock number).
+- Button "Rate another meal" resets the flow with a smooth transition.
+
+EXTRAS
+- One submission per meal per day using localStorage. If already submitted, show a friendly "Already rated {meal}. Come back for the next meal!" screen.
+- navigator.vibrate(10) on taps where supported.
+- If offline, show "Saved, will send when online" and queue the submission.
+- Store the submission as { meal, rating, tags[], comment, createdAt } and console.log it for now.
+
+Make sure the whole flow works end to end on a 375px wide viewport, at smooth 60fps. Do not build the manager side yet.

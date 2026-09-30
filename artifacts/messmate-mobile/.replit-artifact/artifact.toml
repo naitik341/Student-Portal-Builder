@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/"
+title = "MessMate"
+description = "A student-facing hostel mess feedback app for quickly rating meals, choosing optional tags, and saving anonymous feedback locally."
+version = "1.0.0"
+id = "artifacts/messmate-mobile"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/" ]
+localPort = 23124
+
+[services.development]
+run = "pnpm --filter @workspace/messmate-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/messmate-mobile", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/messmate-mobile", "run", "serve" ]
+
+[services.env]
+PORT = "23124"
+BASE_PATH = "/"
