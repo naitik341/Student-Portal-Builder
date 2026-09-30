@@ -80,6 +80,13 @@ export interface FeedbackSubmission {
      * @maxLength 128
      */
   clientSubmissionId: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  deviceId: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  mealDate: string;
   meal: Meal;
   /** @minItems 1 */
   items: string[];
@@ -147,3 +154,4 @@ meal?: Meal;
 export type GetManagedMenuParams = {
 meal?: Meal;
 };
+

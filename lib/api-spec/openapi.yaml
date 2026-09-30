@@ -254,6 +254,12 @@ paths:
                 $ref: "#/components/schemas/FeedbackReceipt"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "409":
+          description: Another submission already exists for this device, meal, and local day
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: Feedback submissions are rate limited
           headers:
@@ -419,6 +425,13 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        deviceId:
+          type: string
+          minLength: 1
+          maxLength: 100
+        mealDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
         meal:
           $ref: "#/components/schemas/Meal"
         items:
@@ -442,6 +455,8 @@ components:
           format: date-time
       required:
         - clientSubmissionId
+        - deviceId
+        - mealDate
         - meal
         - items
         - rating

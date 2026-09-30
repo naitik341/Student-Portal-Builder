@@ -38,16 +38,20 @@ type Palette = ReturnType<typeof useColors>;
 
 interface Submission {
   clientSubmissionId: string;
+  deviceId: string;
+  mealDate: string;
   meal: Meal;
   items: string[];
   rating: number;
   tags: string[];
   comment: string;
   createdAt: string;
+  delivery: 'pending' | 'failed' | 'delivered' | 'rejected';
 }
 
 const SUBMISSIONS_KEY = '@messmate/submissions-v1';
 const OFFLINE_QUEUE_KEY = '@messmate/offline-queue-v1';
+const DEVICE_KEY = '@messmate/device-id-v1';
 const MENU_CACHE_KEY = (meal: Meal) => `@messmate/menu-cache-v1:${meal}`;
 const SETTINGS_CACHE_KEY = (meal: Meal) => `@messmate/settings-cache-v1:${meal}`;
 const MAX_QUEUE_RETRIES = 5;
@@ -94,13 +98,16 @@ function createSubmissionId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
-function normalizeSubmission(value: unknown): Submission {
+function normalizeSubmission(value: unknown, deviceId: string): Submission {
   const stored = value && typeof value === 'object' ? value as Partial<Submission> : {};
   return {
     ...stored,
     clientSubmissionId: typeof stored.clientSubmissionId === 'string' && stored.clientSubmissionId
       ? stored.clientSubmissionId
       : createSubmissionId(),
+    deviceId: stored.deviceId || deviceId,
+    mealDate: stored.mealDate || localDateKey(new Date(stored.createdAt || new Date().toISOString())),
+    delivery: stored.delivery || 'pending',
     meal: stored.meal ?? 'Breakfast',
     items: Array.isArray(stored.items) && stored.items.length > 0 ? stored.items : ['Unspecified item'],
     rating: typeof stored.rating === 'number' ? stored.rating : 3,
@@ -1031,14 +1038,14 @@ export default function MessMateScreen() {
   const [cacheLoading, setCacheLoading] = useState(false);
   const [cacheRefreshToken, setCacheRefreshToken] = useState(0);
   const [online, setOnline] = useState(true);
-  const [savedOffline, setSavedOffline] = useState(false);
   const [queuedSubmissionId, setQueuedSubmissionId] = useState<string | null>(null);
+  const [deliveryError, setDeliveryError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [reduceMotion, setReduceMotion] = useState(false);
-  const [studentCount, setStudentCount] = useState(0);
+  const deviceId = useRef('');
   const onlineRef = useRef(online);
   onlineRef.current = online;
   const flushLock = useRef(false);
@@ -1054,7 +1061,6 @@ export default function MessMateScreen() {
   const progressValue = useRef(new Animated.Value(1 / 4)).current;
   const previousScreen = useRef<Screen>('meal');
   const direction = useRef(1);
-  const countValue = useRef(new Animated.Value(0)).current;
   const checkDraw = useRef(new Animated.Value(48)).current;
   const selectionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const menuQuery = useGetMenu({ meal: meal ?? undefined }, {
@@ -1081,14 +1087,20 @@ export default function MessMateScreen() {
     setLoading(true);
     setLoadError(null);
     try {
-      const values = await AsyncStorage.multiGet([SUBMISSIONS_KEY, OFFLINE_QUEUE_KEY]);
+      const values = await AsyncStorage.multiGet([SUBMISSIONS_KEY, OFFLINE_QUEUE_KEY, DEVICE_KEY]);
       const storedSubmissions = values[0][1] ? JSON.parse(values[0][1]!) : [];
       const storedQueue = values[1][1] ? JSON.parse(values[1][1]!) : [];
       if (!Array.isArray(storedSubmissions) || !Array.isArray(storedQueue)) {
         throw new Error('Saved feedback data could not be read.');
       }
-      const normalizedSubmissions = (storedSubmissions as unknown[]).map(normalizeSubmission);
-      const normalizedQueue = (storedQueue as unknown[]).map(normalizeSubmission);
+      deviceId.current = values[2][1] || createSubmissionId();
+      if (!values[2][1]) await AsyncStorage.setItem(DEVICE_KEY, deviceId.current);
+      const normalizedSubmissions = (storedSubmissions as unknown[])
+        .map((item) => normalizeSubmission(item, deviceId.current));
+      // Legacy versions may have saved online ratings locally without delivering them.
+      // Rebuild the queue from local submissions before the first request.
+      const normalizedQueue = normalizedSubmissions.filter(
+        (item) => item.delivery === 'pending' || item.delivery === 'failed');
       await AsyncStorage.multiSet([
         [SUBMISSIONS_KEY, JSON.stringify(normalizedSubmissions)],
         [OFFLINE_QUEUE_KEY, JSON.stringify(normalizedQueue)],
@@ -1117,7 +1129,7 @@ export default function MessMateScreen() {
         const queue = await withQueueStorageLock(async () => {
           const stored: unknown = JSON.parse((await AsyncStorage.getItem(OFFLINE_QUEUE_KEY)) ?? '[]');
           if (!Array.isArray(stored)) throw new Error('Saved feedback queue is invalid.');
-          const normalized = (stored as unknown[]).map(normalizeSubmission);
+          const normalized = (stored as unknown[]).map((item) => normalizeSubmission(item, deviceId.current));
           if (JSON.stringify(normalized) !== JSON.stringify(stored)) {
             await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(normalized));
           }
@@ -1129,24 +1141,65 @@ export default function MessMateScreen() {
           break;
         }
         const pending = queue[0];
+        let delivery: Submission['delivery'] = 'delivered';
         try {
-          await submitFeedback(pending);
+          const receipt = await submitFeedback({
+            clientSubmissionId: pending.clientSubmissionId,
+            deviceId: pending.deviceId,
+            mealDate: pending.mealDate,
+            meal: pending.meal,
+            items: pending.items,
+            rating: pending.rating,
+            tags: pending.tags,
+            comment: pending.comment,
+            createdAt: pending.createdAt,
+          });
+          if (receipt.clientSubmissionId !== pending.clientSubmissionId) throw new Error('Mismatched receipt');
         } catch (error) {
-          failedRequest = error;
-          break;
+          if (error && typeof error === 'object' && 'status' in error && error.status === 409) {
+            delivery = 'rejected';
+          } else {
+            failedRequest = error;
+            const failedSubmissions = await withQueueStorageLock(async () => {
+              const stored: unknown = JSON.parse((await AsyncStorage.getItem(SUBMISSIONS_KEY)) ?? '[]');
+              if (!Array.isArray(stored)) throw new Error('Saved feedback is invalid.');
+              const updated = stored.map((item) => {
+                const submission = normalizeSubmission(item, deviceId.current);
+                return submission.clientSubmissionId === pending.clientSubmissionId
+                  ? { ...submission, delivery: 'failed' as const } : submission;
+              });
+              await AsyncStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(updated));
+              return updated;
+            });
+            setSubmissions(failedSubmissions);
+            setDeliveryError(true);
+            break;
+          }
         }
-        const remainingQueue = await withQueueStorageLock(async () => {
+        const { remainingQueue, updatedSubmissions } = await withQueueStorageLock(async () => {
           const stored: unknown = JSON.parse((await AsyncStorage.getItem(OFFLINE_QUEUE_KEY)) ?? '[]');
           const latestQueue = Array.isArray(stored)
-            ? (stored as unknown[]).map(normalizeSubmission)
+            ? (stored as unknown[]).map((item) => normalizeSubmission(item, deviceId.current))
             : [];
           const remaining = latestQueue.filter(
             (item) => item.clientSubmissionId !== pending.clientSubmissionId,
           );
-          await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
-          return remaining;
+          const saved: unknown = JSON.parse((await AsyncStorage.getItem(SUBMISSIONS_KEY)) ?? '[]');
+          if (!Array.isArray(saved)) throw new Error('Saved feedback is invalid.');
+          const updated = saved.map((item) => {
+            const submission = normalizeSubmission(item, deviceId.current);
+            return submission.clientSubmissionId === pending.clientSubmissionId
+              ? { ...submission, delivery } : submission;
+          });
+          await AsyncStorage.multiSet([
+            [SUBMISSIONS_KEY, JSON.stringify(updated)],
+            [OFFLINE_QUEUE_KEY, JSON.stringify(remaining)],
+          ]);
+          return { remainingQueue: remaining, updatedSubmissions: updated };
         });
         setOfflineQueue(remainingQueue);
+        setSubmissions(updatedSubmissions);
+        setDeliveryError(false);
         retryAttempt.current = 0;
       }
     } catch (error) {
@@ -1266,7 +1319,14 @@ export default function MessMateScreen() {
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         refreshSuggestion();
-        if (onlineRef.current) void flushQueuedSubmissions();
+        void Network.getNetworkStateAsync().then((network) => {
+          setOnline(network.isConnected !== false && network.isInternetReachable !== false);
+          if (network.isConnected !== false && network.isInternetReachable !== false) {
+            if (retryTimer.current) clearTimeout(retryTimer.current);
+            retryTimer.current = null;
+            void flushQueuedSubmissions();
+          }
+        }).catch(() => undefined);
       }
     });
     return () => {
@@ -1349,29 +1409,17 @@ export default function MessMateScreen() {
 
   useEffect(() => {
     if (screen !== 'thanks') return;
-    countValue.setValue(0);
     checkDraw.setValue(48);
-    const listenerId = countValue.addListener(({ value }) => setStudentCount(Math.round(value)));
     if (reduceMotion) {
-      countValue.setValue(143);
-      setStudentCount(143);
       checkDraw.setValue(0);
     } else {
-      Animated.parallel([
-        Animated.timing(countValue, {
-          toValue: 143,
-          duration: 1050,
-          useNativeDriver: false,
-        }),
-        Animated.timing(checkDraw, {
+      Animated.timing(checkDraw, {
           toValue: 0,
           duration: 620,
           useNativeDriver: false,
-        }),
-      ]).start();
+      }).start();
     }
-    return () => countValue.removeListener(listenerId);
-  }, [checkDraw, countValue, reduceMotion, screen]);
+  }, [checkDraw, reduceMotion, screen]);
 
   const goTo = useCallback(
     (next: Screen, nextDirection = 1) => {
@@ -1399,7 +1447,7 @@ export default function MessMateScreen() {
     const existing = [...submissions, ...offlineQueue].find(
       (submission) =>
         submission.meal === selectedMeal &&
-        localDateKey(new Date(submission.createdAt)) === localDateKey(new Date()),
+        submission.mealDate === localDateKey(new Date()),
     );
     if (selectionTimer.current) clearTimeout(selectionTimer.current);
     selectionTimer.current = setTimeout(() => {
@@ -1436,6 +1484,8 @@ export default function MessMateScreen() {
     setSaveError(null);
     const submission: Submission = {
       clientSubmissionId: createSubmissionId(),
+      deviceId: deviceId.current,
+      mealDate: localDateKey(new Date()),
       meal,
       items: selectedItemIds
         .map((id) => visibleMenuItems?.find((item) => item.id === id)?.name)
@@ -1444,6 +1494,7 @@ export default function MessMateScreen() {
       tags,
       comment: comment.trim(),
       createdAt: new Date().toISOString(),
+      delivery: 'pending',
     };
     try {
       let isOnline = online;
@@ -1459,7 +1510,7 @@ export default function MessMateScreen() {
       const duplicate = [...submissions, ...offlineQueue].some(
         (item) =>
           item.meal === meal &&
-          localDateKey(new Date(item.createdAt)) === localDateKey(new Date()),
+          item.mealDate === submission.mealDate,
       );
       if (duplicate) {
         setAlreadyMeal(meal);
@@ -1474,7 +1525,8 @@ export default function MessMateScreen() {
       const nextQueue = await withQueueStorageLock(async () => {
         const storedQueue: unknown = JSON.parse((await AsyncStorage.getItem(OFFLINE_QUEUE_KEY)) ?? '[]');
         if (!Array.isArray(storedQueue)) throw new Error('Saved feedback queue is invalid.');
-        const currentQueue = (storedQueue as unknown[]).map(normalizeSubmission);
+        const currentQueue = (storedQueue as unknown[])
+          .map((item) => normalizeSubmission(item, deviceId.current));
         const appendedQueue = [...currentQueue, submission];
         await AsyncStorage.multiSet([
           [SUBMISSIONS_KEY, JSON.stringify(nextSubmissions)],
@@ -1488,13 +1540,9 @@ export default function MessMateScreen() {
       if (isOnline) await flushQueuedSubmissions();
       const storedAfterSend: unknown = JSON.parse((await AsyncStorage.getItem(OFFLINE_QUEUE_KEY)) ?? '[]');
       const remainingAfterSend = Array.isArray(storedAfterSend)
-        ? (storedAfterSend as unknown[]).map(normalizeSubmission)
+        ? (storedAfterSend as unknown[]).map((item) => normalizeSubmission(item, deviceId.current))
         : nextQueue;
       setOfflineQueue(remainingAfterSend);
-      const delivered = !remainingAfterSend.some(
-        (item) => item.clientSubmissionId === submission.clientSubmissionId,
-      );
-      setSavedOffline(!delivered);
       goTo('thanks');
     } catch {
       setSaveError('We couldn’t save your feedback. Please try again.');
@@ -1509,6 +1557,17 @@ export default function MessMateScreen() {
     pressed && !reduceMotion ? { opacity: 0.86 } : null;
 
   const isMainStep = screen === 'meal' || screen === 'items' || screen === 'rating' || screen === 'tags';
+  const currentDelivery = submissions.find(
+    (item) => item.clientSubmissionId === queuedSubmissionId)?.delivery;
+  const alreadyDelivery = submissions.find(
+    (item) => item.meal === alreadyMeal && item.mealDate === localDateKey(new Date()))?.delivery;
+  const retryDelivery = () => {
+    if (retryTimer.current) clearTimeout(retryTimer.current);
+    retryTimer.current = null;
+    retryAttempt.current = 0;
+    retryExhausted.current = false;
+    void flushQueuedSubmissions();
+  };
   const groups =
     rating !== null && rating <= 2
       ? [{ title: 'Let’s fix it', items: negativeTags }]
@@ -1663,6 +1722,20 @@ export default function MessMateScreen() {
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 18 }}>
                   <Ionicons name="cloud-offline-outline" size={14} color={colors.mutedForeground} />
                   <Text style={styles.privacyNote}>Offline — feedback will be saved here</Text>
+                </View>
+              ) : null}
+              {offlineQueue.length > 0 ? (
+                <View style={{ marginTop: 14 }}>
+                  <Text style={styles.privacyNote}>
+                    {offlineQueue.length} feedback {offlineQueue.length === 1 ? 'item' : 'items'} waiting to send
+                    {deliveryError ? ' — delivery failed; saved on this device.' : ''}
+                  </Text>
+                  {online && deliveryError ? (
+                    <Pressable testID="retry-delivery" accessibilityRole="button"
+                      onPress={retryDelivery} style={styles.secondaryButton}>
+                      <Text style={styles.secondaryButtonText}>Try sending again</Text>
+                    </Pressable>
+                  ) : null}
                 </View>
               ) : null}
             </View>
@@ -1865,13 +1938,20 @@ export default function MessMateScreen() {
               <Text style={styles.successCopy}>
                 Your feedback helps improve tomorrow’s meal.
               </Text>
-              <Text style={styles.studentStat}>
-                You’re one of {studentCount} students who rated {meal?.toLowerCase()} today
+              <Text style={styles.offlineNote}>
+                {currentDelivery === 'delivered'
+                  ? 'Delivered to the mess team.'
+                  : currentDelivery === 'rejected'
+                    ? 'Not delivered — another rating for this meal today was already received from this device.'
+                    : currentDelivery === 'failed'
+                      ? 'Not delivered yet. Saved on this device; we’ll retry when you return.'
+                      : 'Saved on this device. Waiting to send to the mess team.'}
               </Text>
-              {savedOffline && offlineQueue.some((item) => item.clientSubmissionId === queuedSubmissionId) ? (
-                <Text style={styles.offlineNote}>
-                  Saved on this device and waiting to send. Your feedback is safely queued.
-                </Text>
+              {online && (currentDelivery === 'failed' || currentDelivery === 'pending') ? (
+                <Pressable testID="retry-delivery" accessibilityRole="button"
+                  onPress={retryDelivery} style={styles.secondaryButton}>
+                  <Text style={styles.secondaryButtonText}>Try sending now</Text>
+                </Pressable>
               ) : null}
               <View style={styles.successActions}>
                 <Pressable
@@ -1888,7 +1968,7 @@ export default function MessMateScreen() {
                 </Pressable>
                 {offlineQueue.length > 0 ? (
                   <Text style={styles.privacyNote}>
-                    {offlineQueue.length} feedback {offlineQueue.length === 1 ? 'item' : 'items'} saved for later
+                    {offlineQueue.length} feedback {offlineQueue.length === 1 ? 'item' : 'items'} waiting to send
                   </Text>
                 ) : null}
               </View>
@@ -1902,7 +1982,11 @@ export default function MessMateScreen() {
                 Already rated {alreadyMeal?.toLowerCase()}
               </Text>
               <Text style={styles.successCopy}>
-                Thanks for helping make today’s meal better. Come back for the next meal!
+                {alreadyDelivery === 'delivered'
+                  ? 'Your feedback was delivered. Come back for the next meal!'
+                  : alreadyDelivery === 'rejected'
+                    ? 'Another rating for this meal was already received from this device today.'
+                    : 'Your rating is saved on this device and still waiting to be delivered.'}
               </Text>
               <View style={styles.successActions}>
                 <Pressable

@@ -207,6 +207,9 @@ export const UpdateSettingsResponse = zod.object({
  */
 export const submitFeedbackBodyClientSubmissionIdMax = 128;
 
+export const submitFeedbackBodyDeviceIdMax = 100;
+
+export const submitFeedbackBodyMealDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 
 export const submitFeedbackBodyRatingMax = 5;
 
@@ -216,6 +219,8 @@ export const submitFeedbackBodyCommentMax = 2000;
 
 export const SubmitFeedbackBody = zod.object({
   "clientSubmissionId": zod.string().min(1).max(submitFeedbackBodyClientSubmissionIdMax),
+  "deviceId": zod.string().min(1).max(submitFeedbackBodyDeviceIdMax),
+  "mealDate": zod.string().regex(submitFeedbackBodyMealDateRegExp),
   "meal": zod.enum(['Breakfast', 'Lunch', 'Dinner']),
   "items": zod.array(zod.string()).min(1),
   "rating": zod.number().int().min(1).max(submitFeedbackBodyRatingMax),
@@ -242,3 +247,5 @@ export const GetFeedbackSummaryResponse = zod.object({
   "count": zod.number().int()
 }))
 })
+
+

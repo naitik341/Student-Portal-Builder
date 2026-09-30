@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { db, feedback, meals } from "@workspace/db";
+import { db, feedback } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { z } from "zod";
+import { SubmitFeedbackBody, SubmitFeedbackResponse } from "@workspace/api-zod";
 import type { RequestHandler } from "express";
 
 const router: IRouter = Router();
@@ -44,58 +44,59 @@ const rateLimitFeedback: RequestHandler = (req, res, next) => {
   next();
 };
 
-const feedbackSchema = z.object({
-  clientSubmissionId: z.string().trim().min(1).max(128),
-  meal: z.enum(meals),
-  items: z.array(z.string().trim().min(1).max(100)).min(1).max(30),
-  rating: z.number().int().min(1).max(5),
-  tags: z.array(z.string().trim().min(1).max(100)).max(50),
-  comment: z.string().max(2000),
-  createdAt: z.string().datetime({ offset: true }),
-});
-
 router.post("/feedback", rateLimitFeedback, async (req, res, next) => {
-  const parsed = feedbackSchema.safeParse(req.body);
+  const parsed = SubmitFeedbackBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "Invalid feedback", details: parsed.error.flatten() });
+    res.status(400).json({ error: "Invalid feedback" });
     return;
   }
   try {
     const payload = parsed.data;
+    const date = new Date(`${payload.mealDate}T00:00:00Z`);
+    if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== payload.mealDate ||
+        Number.isNaN(payload.createdAt.getTime()) ||
+        payload.items.some((item) => !item.trim() || item.length > 100) ||
+        payload.items.length > 30 ||
+        payload.tags.length > 50 || payload.tags.some((tag) => !tag.trim() || tag.length > 100)) {
+      res.status(400).json({ error: "Invalid feedback" });
+      return;
+    }
     const [created] = await db
       .insert(feedback)
       .values({
         ...payload,
-        createdAt: new Date(payload.createdAt),
+        createdAt: payload.createdAt,
       })
-      .onConflictDoNothing({ target: feedback.clientSubmissionId })
+      .onConflictDoNothing()
       .returning();
     if (created) {
-      res.status(201).json({
+      res.status(201).json(SubmitFeedbackResponse.parse({
         clientSubmissionId: created.clientSubmissionId,
         createdAt: created.createdAt.toISOString(),
         duplicate: false,
-      });
+      }));
       return;
     }
 
     const [existing] = await db
-      .select({
-        clientSubmissionId: feedback.clientSubmissionId,
-        createdAt: feedback.createdAt,
-      })
+      .select()
       .from(feedback)
       .where(eq(feedback.clientSubmissionId, payload.clientSubmissionId))
       .limit(1);
-    if (!existing) {
-      res.status(409).json({ error: "Could not confirm duplicate feedback submission" });
+    if (!existing || existing.deviceId !== payload.deviceId ||
+        existing.mealDate !== payload.mealDate || existing.meal !== payload.meal ||
+        existing.rating !== payload.rating || existing.comment !== payload.comment ||
+        existing.createdAt.toISOString() !== payload.createdAt.toISOString() ||
+        JSON.stringify(existing.items) !== JSON.stringify(payload.items) ||
+        JSON.stringify(existing.tags) !== JSON.stringify(payload.tags)) {
+      res.status(409).json({ error: "Feedback already exists for this device, meal, and day" });
       return;
     }
-    res.json({
+    res.json(SubmitFeedbackResponse.parse({
       clientSubmissionId: existing.clientSubmissionId,
       createdAt: existing.createdAt.toISOString(),
       duplicate: true,
-    });
+    }));
   } catch (error) {
     next(error);
   }

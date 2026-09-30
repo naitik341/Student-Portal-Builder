@@ -1,1 +1,2 @@
 - [Staff access policy](staff-access-policy.md) — manager access must default to denied until a verified staff email is explicitly allowlisted.
+- [Anonymous feedback identity](anonymous-feedback-identity.md) — daily duplicate prevention is per installation, not per person across devices.
