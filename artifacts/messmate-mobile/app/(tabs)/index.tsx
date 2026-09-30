@@ -1838,16 +1838,27 @@ export default function MessMateScreen() {
               />
               <View style={styles.successCircle}>
                 <Svg width={82} height={82} viewBox="0 0 100 100">
-                  <AnimatedPath
-                    d="M25 51 L43 68 L76 32"
-                    fill="none"
-                    stroke={colors.success}
-                    strokeWidth={8}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeDasharray="80"
-                    strokeDashoffset={checkDraw}
-                  />
+                  {Platform.OS === 'web' ? (
+                    <Path
+                      d="M25 51 L43 68 L76 32"
+                      fill="none"
+                      stroke={colors.success}
+                      strokeWidth={8}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  ) : (
+                    <AnimatedPath
+                      d="M25 51 L43 68 L76 32"
+                      fill="none"
+                      stroke={colors.success}
+                      strokeWidth={8}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeDasharray="80"
+                      strokeDashoffset={checkDraw}
+                    />
+                  )}
                 </Svg>
               </View>
               <Text style={styles.successTitle}>Thanks!</Text>
